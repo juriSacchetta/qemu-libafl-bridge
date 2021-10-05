@@ -12346,6 +12346,37 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
         if (target_to_host_timespec(&ts, arg3)) {
             return -TARGET_EFAULT;
         }
+#ifdef QEMU_FIBERS
+#undef timespeccmp
+#undef timespecsub
+#define	timespeccmp(tsp, usp, cmp)					\
+	(((tsp)->tv_sec == (usp)->tv_sec) ?				\
+	    ((tsp)->tv_nsec cmp (usp)->tv_nsec) :			\
+	    ((tsp)->tv_sec cmp (usp)->tv_sec))
+#define	timespecsub(tsp, usp, vsp)					\
+	do {								\
+		(vsp)->tv_sec = (tsp)->tv_sec - (usp)->tv_sec;		\
+		(vsp)->tv_nsec = (tsp)->tv_nsec - (usp)->tv_nsec;	\
+		if ((vsp)->tv_nsec < 0) {				\
+			(vsp)->tv_sec--;				\
+			(vsp)->tv_nsec += 1000000000L;			\
+		}							\
+	} while (0)
+	    // TODO handle signals
+        struct timespec sleep_start;
+        clockid_t clock_type = arg1;
+        clock_gettime(clock_type, &sleep_start);
+        fprintf(stderr, "qemu_fiber: clock_nanosleep %ld %ld\n", ts.tv_sec, ts.tv_nsec);
+        while (1) {
+            struct timespec now, diff;
+            clock_gettime(clock_type, &now);
+            timespecsub(&now, &sleep_start, &diff);
+            if (timespeccmp(&diff, &ts, >=))
+                break;
+            qemu_fibers_switch();
+        }
+        return 0;
+#endif
         ret = get_errno(safe_clock_nanosleep(arg1, arg2,
                                              &ts, arg4 ? &ts : NULL));
         /*
@@ -12369,7 +12400,37 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
         if (target_to_host_timespec64(&ts, arg3)) {
             return -TARGET_EFAULT;
         }
-
+#ifdef QEMU_FIBERS
+#undef timespeccmp
+#undef timespecsub
+#define	timespeccmp(tsp, usp, cmp)					\
+	(((tsp)->tv_sec == (usp)->tv_sec) ?				\
+	    ((tsp)->tv_nsec cmp (usp)->tv_nsec) :			\
+	    ((tsp)->tv_sec cmp (usp)->tv_sec))
+#define	timespecsub(tsp, usp, vsp)					\
+	do {								\
+		(vsp)->tv_sec = (tsp)->tv_sec - (usp)->tv_sec;		\
+		(vsp)->tv_nsec = (tsp)->tv_nsec - (usp)->tv_nsec;	\
+		if ((vsp)->tv_nsec < 0) {				\
+			(vsp)->tv_sec--;				\
+			(vsp)->tv_nsec += 1000000000L;			\
+		}							\
+	} while (0)
+	    // TODO handle signals
+        struct timespec sleep_start;
+        clockid_t clock_type = arg1;
+        clock_gettime(clock_type, &sleep_start);
+        fprintf(stderr, "qemu_fiber: clock_nanosleep %ld %ld\n", ts.tv_sec, ts.tv_nsec);
+        while (1) {
+            struct timespec now, diff;
+            clock_gettime(clock_type, &now);
+            timespecsub(&now, &sleep_start, &diff);
+            if (timespeccmp(&diff, &ts, >=))
+                break;
+            qemu_fibers_switch();
+        }
+        return 0;
+#endif
         ret = get_errno(safe_clock_nanosleep(arg1, arg2,
                                              &ts, arg4 ? &ts : NULL));
 
