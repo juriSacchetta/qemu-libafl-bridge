@@ -160,6 +160,9 @@ typedef struct TaskState {
 
     /* This thread's sigaltstack, if it has one */
     struct target_sigaltstack sigaltstack_used;
+#ifdef QEMU_FIBERS
+    int fiber_index;
+#endif
 } __attribute__((aligned(16))) TaskState;
 
 abi_long do_brk(abi_ulong new_brk);

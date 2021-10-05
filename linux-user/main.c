@@ -16,7 +16,7 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
-
+#define QEMU_FIBERS 1
 #include "qemu/osdep.h"
 #include "qemu-common.h"
 #include "qemu/units.h"
@@ -171,11 +171,21 @@ void qemu_cpu_kick(CPUState *cpu)
     cpu_exit(cpu);
 }
 
+#ifdef QEMU_FIBERS
+extern int fiber_current;
+#endif
+
 void task_settid(TaskState *ts)
 {
+#ifdef QEMU_FIBERS
+    if (ts->ts_tid == 0) {
+        ts->ts_tid = (pid_t)(0x3fffffff + fiber_current);
+    }
+#else
     if (ts->ts_tid == 0) {
         ts->ts_tid = (pid_t)syscall(SYS_gettid);
     }
+#endif
 }
 
 void stop_all_tasks(void)
@@ -614,6 +624,10 @@ static int parse_args(int argc, char **argv)
     return optind;
 }
 
+#ifdef QEMU_FIBERS
+void qemu_fibers_init(CPUArchState *env);
+#endif
+
 int main(int argc, char **argv, char **envp)
 {
     struct target_pt_regs regs1, *regs = &regs1;
@@ -880,6 +894,9 @@ int main(int argc, char **argv, char **envp)
         }
         gdb_handlesig(cpu, 0);
     }
+#ifdef QEMU_FIBERS
+    qemu_fibers_init(env);
+#endif
     cpu_loop(env);
     /* never exits */
     return 0;

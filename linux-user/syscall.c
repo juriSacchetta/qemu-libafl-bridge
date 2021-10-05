@@ -16,6 +16,7 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
+#define QEMU_FIBERS 1
 #define _ATFILE_SOURCE
 #include "qemu/osdep.h"
 #include "qemu/cutils.h"
@@ -6300,15 +6301,18 @@ abi_long do_arch_prctl(CPUX86State *env, int code, abi_ulong addr)
 static pthread_mutex_t clone_lock = PTHREAD_MUTEX_INITIALIZER;
 typedef struct {
     CPUArchState *env;
+#ifndef QEMU_FIBERS
     pthread_mutex_t mutex;
     pthread_cond_t cond;
     pthread_t thread;
+#endif
     uint32_t tid;
     abi_ulong child_tidptr;
     abi_ulong parent_tidptr;
     sigset_t sigmask;
 } new_thread_info;
 
+#ifndef QEMU_FIBERS
 static void *clone_func(void *arg)
 {
     new_thread_info *info = arg;
@@ -6343,6 +6347,118 @@ static void *clone_func(void *arg)
     return NULL;
 }
 
+#else
+#include <ucontext.h>
+
+struct qemu_fiber {
+    CPUArchState *env;
+    ucontext_t ctx;
+    int is_main;
+    int is_zombie; // TODO reuse zombie slots on create
+};
+
+int fiber_current = 0;
+int fibers_count = 0;
+int fibers_active_count = 0;
+struct qemu_fiber *fibers = NULL;
+int fiber_last_switch = 0;
+
+void qemu_fibers_init(CPUArchState *env);
+void qemu_fibers_init(CPUArchState *env)
+{
+    int idx = fibers_count++;
+    fibers_active_count++;
+    fibers = realloc(fibers, fibers_count * sizeof(struct qemu_fiber));
+    memset(&fibers[idx], 0, sizeof(struct qemu_fiber));
+    fibers[idx].env = env;
+    fibers[idx].is_main = 1;
+    getcontext(&fibers[idx].ctx); // needed?
+    fiber_current = idx;
+    fiber_last_switch = clock();
+}
+
+void qemu_fibers_kill(int idx);
+void qemu_fibers_kill(int idx)
+{
+    fibers[idx].is_zombie = 1;
+    --fibers_active_count;
+}
+
+void qemu_fibers_switch(void);
+void qemu_fibers_switch(void)
+{
+    if (fibers_active_count < 2) return;
+
+    fiber_last_switch = clock();
+    int old = fiber_current;
+    do fiber_current = (fiber_current +1) % fibers_count;
+    while (fibers[fiber_current].is_zombie);
+    fprintf(stderr, "qemu_fibers: swap from %d to %d\n", old, fiber_current);
+    thread_cpu = env_cpu(fibers[fiber_current].env);
+    swapcontext(&fibers[old].ctx, &fibers[fiber_current].ctx);
+}
+
+#define FIBER_CLOCK_SWICTH 65536
+
+void qemu_fibers_may_switch(void);
+void qemu_fibers_may_switch(void) {
+    if (clock() - fiber_last_switch > FIBER_CLOCK_SWICTH)
+        qemu_fibers_switch();
+}
+
+static void qemu_fibers_exec(int idx)
+{
+    CPUState *cpu;
+    TaskState *ts;
+    
+    fiber_current = idx;
+    cpu = env_cpu(fibers[idx].env);
+    ts = (TaskState *)cpu->opaque;
+    task_settid(ts);
+    thread_cpu = cpu;
+
+    fprintf(stderr, "qemu_fibers: starting %d\n", fiber_current);
+    cpu_loop(fibers[idx].env);
+}
+
+static int qemu_fibers_create(new_thread_info *info)
+{
+    CPUArchState *env;
+    CPUState *cpu;
+
+    int idx = fibers_count++;
+    ++fibers_active_count;
+    int new_tid = 0x3fffffff + idx;
+
+    env = info->env;
+    cpu = env_cpu(env);
+    info->tid = new_tid; // sys_gettid();
+    if (info->child_tidptr)
+        put_user_u32(info->tid, info->child_tidptr);
+    if (info->parent_tidptr)
+        put_user_u32(info->tid, info->parent_tidptr);
+    qemu_guest_random_seed_thread_part2(cpu->random_seed);
+
+    void *stack = malloc(NEW_STACK_SIZE);
+
+    fibers = realloc(fibers, fibers_count * sizeof(struct qemu_fiber));
+    memset(&fibers[idx], 0, sizeof(struct qemu_fiber));
+    
+    getcontext(&fibers[idx].ctx);
+    
+    fibers[idx].env = env;
+    fibers[idx].ctx.uc_stack.ss_sp = stack;
+    fibers[idx].ctx.uc_stack.ss_size = NEW_STACK_SIZE;
+    fibers[idx].ctx.uc_link = NULL;
+    makecontext(&fibers[idx].ctx, (void (*) (void))&qemu_fibers_exec, 1, idx);
+    
+    //fprintf(stderr, "qemu_fibers: swap from %d to %d\n", old, fiber_current);
+    //swapcontext(&fibers[old].ctx, &fibers[fiber_current].ctx);
+    
+    return new_tid;
+}
+#endif
+
 /* do_fork() Must return host values and target errnos (unlike most
    do_*() functions). */
 static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
@@ -6354,7 +6470,9 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
     TaskState *ts;
     CPUState *new_cpu;
     CPUArchState *new_env;
+#ifndef QEMU_FIBERS
     sigset_t sigmask;
+#endif
 
     flags &= ~CLONE_IGNORED_FLAGS;
 
@@ -6365,7 +6483,9 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
     if (flags & CLONE_VM) {
         TaskState *parent_ts = (TaskState *)cpu->opaque;
         new_thread_info info;
+#ifndef QEMU_FIBERS
         pthread_attr_t attr;
+#endif
 
         if (((flags & CLONE_THREAD_FLAGS) != CLONE_THREAD_FLAGS) ||
             (flags & CLONE_INVALID_THREAD_FLAGS)) {
@@ -6375,6 +6495,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         ts = g_new0(TaskState, 1);
         init_task_state(ts);
 
+#ifndef QEMU_FIBERS
         /* Grab a mutex so that thread setup appears atomic.  */
         pthread_mutex_lock(&clone_lock);
 
@@ -6387,6 +6508,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
             cpu->tcg_cflags |= CF_PARALLEL;
             tb_flush(cpu);
         }
+#endif
 
         /* we create a new CPU instance. */
         new_env = cpu_copy(env);
@@ -6408,9 +6530,11 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         }
 
         memset(&info, 0, sizeof(info));
+#ifndef QEMU_FIBERS
         pthread_mutex_init(&info.mutex, NULL);
         pthread_mutex_lock(&info.mutex);
         pthread_cond_init(&info.cond, NULL);
+#endif
         info.env = new_env;
         if (flags & CLONE_CHILD_SETTID) {
             info.child_tidptr = child_tidptr;
@@ -6419,6 +6543,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
             info.parent_tidptr = parent_tidptr;
         }
 
+#ifndef QEMU_FIBERS
         ret = pthread_attr_init(&attr);
         ret = pthread_attr_setstacksize(&attr, NEW_STACK_SIZE);
         ret = pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
@@ -6426,8 +6551,12 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
            initializing, so temporarily block all signals.  */
         sigfillset(&sigmask);
         sigprocmask(SIG_BLOCK, &sigmask, &info.sigmask);
+#endif
         cpu->random_seed = qemu_guest_random_seed_thread_part1();
 
+#ifdef QEMU_FIBERS
+        ret = qemu_fibers_create(&info);
+#else
         ret = pthread_create(&info.thread, &attr, clone_func, &info);
         /* TODO: Free new CPU state if thread creation failed.  */
 
@@ -6444,6 +6573,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         pthread_cond_destroy(&info.cond);
         pthread_mutex_destroy(&info.mutex);
         pthread_mutex_unlock(&clone_lock);
+#endif
     } else {
         /* if no CLONE_VM, we consider it is a fork */
         if (flags & CLONE_INVALID_FORK_FLAGS) {
@@ -7508,7 +7638,6 @@ static int do_futex(CPUState *cpu, target_ulong uaddr, int op, int val,
 {
     struct timespec ts, *pts;
     int base_op;
-
     /* ??? We assume FUTEX_* constants are the same on both host
        and target.  */
 #ifdef FUTEX_CMD_MASK
@@ -7525,8 +7654,44 @@ static int do_futex(CPUState *cpu, target_ulong uaddr, int op, int val,
         } else {
             pts = NULL;
         }
+#ifdef QEMU_FIBERS
+#define	timespeccmp(tsp, usp, cmp)					\
+	(((tsp)->tv_sec == (usp)->tv_sec) ?				\
+	    ((tsp)->tv_nsec cmp (usp)->tv_nsec) :			\
+	    ((tsp)->tv_sec cmp (usp)->tv_sec))
+#define	timespecsub(tsp, usp, vsp)					\
+	do {								\
+		(vsp)->tv_sec = (tsp)->tv_sec - (usp)->tv_sec;		\
+		(vsp)->tv_nsec = (tsp)->tv_nsec - (usp)->tv_nsec;	\
+		if ((vsp)->tv_nsec < 0) {				\
+			(vsp)->tv_sec--;				\
+			(vsp)->tv_nsec += 1000000000L;			\
+		}							\
+	} while (0)
+        struct timespec futex_start;
+        clockid_t clock_type = CLOCK_MONOTONIC;
+        if (op & FUTEX_CLOCK_REALTIME)
+            clock_type = CLOCK_REALTIME;
+        if (pts)
+            clock_gettime(clock_type, &futex_start);
+        int* to_check = (int*)g2h(cpu, uaddr);
+        int correct = tswap32(val);
+        fprintf(stderr, "qemu_fiber: futex wait 0x%lx %d\n", uaddr, correct);
+        while (*to_check != correct) {
+            if (pts) {
+                struct timespec now, diff;
+                clock_gettime(clock_type, &now);
+                timespecsub(&now, &futex_start, &diff);
+                if (timespeccmp(&diff, pts, >=))
+                    return 0;
+            }
+            qemu_fibers_switch();
+        }
+        return 0;
+#else
         return do_safe_futex(g2h(cpu, uaddr),
                              op, tswap32(val), pts, NULL, val3);
+#endif
     case FUTEX_WAKE:
         return do_safe_futex(g2h(cpu, uaddr),
                              op, val, NULL, NULL, 0);
@@ -7534,7 +7699,7 @@ static int do_futex(CPUState *cpu, target_ulong uaddr, int op, int val,
         return do_safe_futex(g2h(cpu, uaddr),
                              op, val, NULL, NULL, 0);
     case FUTEX_REQUEUE:
-    case FUTEX_CMP_REQUEUE:
+    case FUTEX_CMP_REQUEUE: // TODO implement for qemu_fibers
     case FUTEX_WAKE_OP:
         /* For FUTEX_REQUEUE, FUTEX_CMP_REQUEUE, and FUTEX_WAKE_OP, the
            TIMEOUT parameter is interpreted as a uint32_t by the kernel.
@@ -8198,8 +8363,14 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
             }
             thread_cpu = NULL;
             g_free(ts);
+#ifndef QEMU_FIBERS
             rcu_unregister_thread();
             pthread_exit(NULL);
+#else
+            fprintf(stderr, "qemu_fibers: exit %d\n", fiber_current);
+            qemu_fibers_kill(fiber_current);
+            qemu_fibers_switch();
+#endif
         }
 
         pthread_mutex_unlock(&clone_lock);
@@ -11833,6 +12004,9 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
         return TARGET_PAGE_SIZE;
 #endif
     case TARGET_NR_gettid:
+#ifdef QEMU_FIBERS
+        return (0x3fffffff +1 + fiber_current);
+#endif
         return get_errno(sys_gettid());
 #ifdef TARGET_NR_readahead
     case TARGET_NR_readahead:
@@ -13129,6 +13303,10 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
                     abi_long arg5, abi_long arg6, abi_long arg7,
                     abi_long arg8)
 {
+#ifdef QEMU_FIBERS
+    qemu_fibers_switch();
+#endif
+
     CPUState *cpu = env_cpu(cpu_env);
     abi_long ret;
 
