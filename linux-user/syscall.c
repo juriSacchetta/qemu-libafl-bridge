@@ -6363,6 +6363,8 @@ int fibers_active_count = 0;
 struct qemu_fiber *fibers = NULL;
 int fiber_last_switch = 0;
 
+void force_sig_env(CPUArchState *env, int sig);
+
 void qemu_fibers_init(CPUArchState *env);
 void qemu_fibers_init(CPUArchState *env)
 {
@@ -12047,7 +12049,7 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
 #endif
     case TARGET_NR_gettid:
 #ifdef QEMU_FIBERS
-        return (0x3fffffff +1 + fiber_current);
+        return (0x3fffffff + fiber_current);
 #endif
         return get_errno(sys_gettid());
 #ifdef TARGET_NR_readahead
@@ -12385,9 +12387,31 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
 #endif
 
     case TARGET_NR_tkill:
+#ifdef QEMU_FIBERS
+        if (arg1 >= 0x3fffffff) {
+            int idx = arg1 - 0x3fffffff;
+            if (idx < fibers_count) {
+                if (fibers[idx].is_zombie)
+                    return -ESRCH;
+                force_sig_env(fibers[idx].env, arg2);
+                return 0;
+            }
+        }
+#endif
         return get_errno(safe_tkill((int)arg1, target_to_host_signal(arg2)));
 
     case TARGET_NR_tgkill:
+#ifdef QEMU_FIBERS
+        if (arg2 >= 0x3fffffff) {
+            int idx = arg2 - 0x3fffffff;
+            if (idx < fibers_count) {
+                if (fibers[idx].is_zombie)
+                    return -ESRCH;
+                force_sig_env(fibers[idx].env, arg3);
+                return 0;
+            }
+        }
+#endif
         return get_errno(safe_tgkill((int)arg1, (int)arg2,
                          target_to_host_signal(arg3)));
 

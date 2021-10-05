@@ -651,6 +651,21 @@ void force_sig(int sig)
     queue_signal(env, info.si_signo, QEMU_SI_KILL, &info);
 }
 
+/* Force a synchronously taken signal to a specific env.
+ */
+void force_sig_env(CPUArchState *env, int sig);
+void force_sig_env(CPUArchState *env, int sig)
+{
+    target_siginfo_t info = {};
+
+    info.si_signo = sig;
+    info.si_errno = 0;
+    info.si_code = TARGET_SI_KERNEL;
+    info._sifields._kill._pid = 0;
+    info._sifields._kill._uid = 0;
+    queue_signal(env, info.si_signo, QEMU_SI_KILL, &info);
+}
+
 /*
  * Force a synchronously taken QEMU_SI_FAULT signal. For QEMU the
  * 'force' part is handled in process_pending_signals().
