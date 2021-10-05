@@ -6355,6 +6355,8 @@ struct qemu_fiber {
     ucontext_t ctx;
     int is_main;
     int is_zombie; // TODO reuse zombie slots on create
+    int waiting_futex;
+    target_ulong futex_addr;
 };
 
 int fiber_current = 0;
@@ -7650,6 +7652,7 @@ static int do_futex(CPUState *cpu, target_ulong uaddr, int op, int val,
     base_op = op;
 #endif
     switch (base_op) {
+    // TODO implement BITSET for fibers
     case FUTEX_WAIT:
     case FUTEX_WAIT_BITSET:
         if (timeout) {
@@ -7682,16 +7685,23 @@ static int do_futex(CPUState *cpu, target_ulong uaddr, int op, int val,
             clock_gettime(clock_type, &futex_start);
         int* to_check = (int*)g2h(cpu, uaddr);
         int expected = tswap32(val);
+        fibers[fiber_current].futex_addr = uaddr;
         fprintf(stderr, "qemu_fiber: futex wait 0x%lx %d\n", uaddr, expected);
         while (__atomic_load_n(to_check, __ATOMIC_ACQUIRE) == expected) {
             if (pts) {
                 struct timespec now, diff;
                 clock_gettime(clock_type, &now);
                 timespecsub(&now, &futex_start, &diff);
-                if (timespeccmp(&diff, pts, >=))
-                    return 0;
+                if (timespeccmp(&diff, pts, >=)) {
+                    fibers[fiber_current].waiting_futex = 0;
+                    break;
+                }
             }
+            fibers[fiber_current].waiting_futex = 1;
             qemu_fibers_switch();
+            if (!fibers[fiber_current].waiting_futex)
+                break;
+            to_check = (int*)g2h(cpu, fibers[fiber_current].futex_addr);
         }
         return 0;
 #else
@@ -7706,6 +7716,31 @@ static int do_futex(CPUState *cpu, target_ulong uaddr, int op, int val,
                              op, val, NULL, NULL, 0);
     case FUTEX_REQUEUE:
     case FUTEX_CMP_REQUEUE: // TODO implement for qemu_fibers
+#ifdef QEMU_FIBERS
+    {
+        uint32_t val2 = (uint32_t)timeout;
+        int* to_check = (int*)g2h(cpu, uaddr);
+        int expected = tswap32(val3);
+        if (base_op == FUTEX_CMP_REQUEUE &&
+            __atomic_load_n(to_check, __ATOMIC_ACQUIRE) != expected)
+            return -EAGAIN;
+        int i, j, k;
+        for (i = 0, j = 0, k = 0; i < fibers_count; ++i) {
+            if (fibers[i].is_zombie) continue;
+            if (fibers[i].waiting_futex && fibers[i].futex_addr == uaddr) {
+                if (j < val) {
+                    ++j;
+                    fibers[i].waiting_futex = 0;
+                } else if (k < val2) {
+                    ++k;
+                    fibers[i].futex_addr = uaddr2;
+                }
+            }
+        }
+        if (val) qemu_fibers_switch();
+        return j+k;
+    }
+#endif
     case FUTEX_WAKE_OP:
         /* For FUTEX_REQUEUE, FUTEX_CMP_REQUEUE, and FUTEX_WAKE_OP, the
            TIMEOUT parameter is interpreted as a uint32_t by the kernel.
@@ -7772,16 +7807,23 @@ static int do_futex_time64(CPUState *cpu, target_ulong uaddr, int op,
             clock_gettime(clock_type, &futex_start);
         int* to_check = (int*)g2h(cpu, uaddr);
         int expected = tswap32(val);
+        fibers[fiber_current].futex_addr = uaddr;
         fprintf(stderr, "qemu_fiber: futex wait 0x%lx %d\n", uaddr, expected);
         while (__atomic_load_n(to_check, __ATOMIC_ACQUIRE) == expected) {
             if (pts) {
                 struct timespec now, diff;
                 clock_gettime(clock_type, &now);
                 timespecsub(&now, &futex_start, &diff);
-                if (timespeccmp(&diff, pts, >=))
-                    return 0;
+                if (timespeccmp(&diff, pts, >=)) {
+                    fibers[fiber_current].waiting_futex = 0;
+                    break;
+                }
             }
+            fibers[fiber_current].waiting_futex = 1;
             qemu_fibers_switch();
+            if (!fibers[fiber_current].waiting_futex)
+                break;
+            to_check = (int*)g2h(cpu, fibers[fiber_current].futex_addr);
         }
         return 0;
 #else
@@ -7794,6 +7836,31 @@ static int do_futex_time64(CPUState *cpu, target_ulong uaddr, int op,
         return do_safe_futex(g2h(cpu, uaddr), op, val, NULL, NULL, 0);
     case FUTEX_REQUEUE:
     case FUTEX_CMP_REQUEUE:
+#ifdef QEMU_FIBERS
+    {
+        uint32_t val2 = (uint32_t)timeout;
+        int* to_check = (int*)g2h(cpu, uaddr);
+        int expected = tswap32(val3);
+        if (base_op == FUTEX_CMP_REQUEUE &&
+            __atomic_load_n(to_check, __ATOMIC_ACQUIRE) != expected)
+            return -EAGAIN;
+        int i, j, k;
+        for (i = 0, j = 0, k = 0; i < fibers_count; ++i) {
+            if (fibers[i].is_zombie) continue;
+            if (fibers[i].waiting_futex && fibers[i].futex_addr == uaddr) {
+                if (j < val) {
+                    ++j;
+                    fibers[i].waiting_futex = 0;
+                } else if (k < val2) {
+                    ++k;
+                    fibers[i].futex_addr = uaddr2;
+                }
+            }
+        }
+        if (val) qemu_fibers_switch();
+        return j+k;
+    }
+#endif
     case FUTEX_WAKE_OP:
         /* For FUTEX_REQUEUE, FUTEX_CMP_REQUEUE, and FUTEX_WAKE_OP, the
            TIMEOUT parameter is interpreted as a uint32_t by the kernel.
@@ -12442,6 +12509,7 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
     }
 #endif
 
+// TODO fiber version
 #if defined(TARGET_NR_set_tid_address) && defined(__NR_set_tid_address)
     case TARGET_NR_set_tid_address:
         return get_errno(set_tid_address((int *)g2h(cpu, arg1)));
