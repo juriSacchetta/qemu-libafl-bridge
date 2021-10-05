@@ -6387,12 +6387,15 @@ void qemu_fibers_kill(int idx)
 void qemu_fibers_switch(void);
 void qemu_fibers_switch(void)
 {
-    if (fibers_active_count < 2) return;
+    // if (fibers_active_count < 2) return;
 
     fiber_last_switch = clock();
     int old = fiber_current;
-    do fiber_current = (fiber_current +1) % fibers_count;
-    while (fibers[fiber_current].is_zombie);
+    do {
+        fiber_current = (fiber_current +1) % fibers_count;
+        if (fiber_current == old)
+            return;
+    } while (fibers[fiber_current].is_zombie);
     fprintf(stderr, "qemu_fibers: swap from %d to %d\n", old, fiber_current);
     thread_cpu = env_cpu(fibers[fiber_current].env);
     swapcontext(&fibers[old].ctx, &fibers[fiber_current].ctx);
@@ -6452,8 +6455,7 @@ static int qemu_fibers_create(new_thread_info *info)
     fibers[idx].ctx.uc_link = NULL;
     makecontext(&fibers[idx].ctx, (void (*) (void))&qemu_fibers_exec, 1, idx);
     
-    //fprintf(stderr, "qemu_fibers: swap from %d to %d\n", old, fiber_current);
-    //swapcontext(&fibers[old].ctx, &fibers[fiber_current].ctx);
+    swapcontext(&fibers[fiber_current].ctx, &fibers[idx].ctx);
     
     return new_tid;
 }
@@ -7655,6 +7657,8 @@ static int do_futex(CPUState *cpu, target_ulong uaddr, int op, int val,
             pts = NULL;
         }
 #ifdef QEMU_FIBERS
+#undef timespeccmp
+#undef timespecsub
 #define	timespeccmp(tsp, usp, cmp)					\
 	(((tsp)->tv_sec == (usp)->tv_sec) ?				\
 	    ((tsp)->tv_nsec cmp (usp)->tv_nsec) :			\
@@ -7675,9 +7679,9 @@ static int do_futex(CPUState *cpu, target_ulong uaddr, int op, int val,
         if (pts)
             clock_gettime(clock_type, &futex_start);
         int* to_check = (int*)g2h(cpu, uaddr);
-        int correct = tswap32(val);
-        fprintf(stderr, "qemu_fiber: futex wait 0x%lx %d\n", uaddr, correct);
-        while (*to_check != correct) {
+        int expected = tswap32(val);
+        fprintf(stderr, "qemu_fiber: futex wait 0x%lx %d\n", uaddr, expected);
+        while (__atomic_load_n(to_check, __ATOMIC_ACQUIRE) == expected) {
             if (pts) {
                 struct timespec now, diff;
                 clock_gettime(clock_type, &now);
@@ -7742,8 +7746,46 @@ static int do_futex_time64(CPUState *cpu, target_ulong uaddr, int op,
         } else {
             pts = NULL;
         }
+#ifdef QEMU_FIBERS
+#undef timespeccmp
+#undef timespecsub
+#define	timespeccmp(tsp, usp, cmp)					\
+	(((tsp)->tv_sec == (usp)->tv_sec) ?				\
+	    ((tsp)->tv_nsec cmp (usp)->tv_nsec) :			\
+	    ((tsp)->tv_sec cmp (usp)->tv_sec))
+#define	timespecsub(tsp, usp, vsp)					\
+	do {								\
+		(vsp)->tv_sec = (tsp)->tv_sec - (usp)->tv_sec;		\
+		(vsp)->tv_nsec = (tsp)->tv_nsec - (usp)->tv_nsec;	\
+		if ((vsp)->tv_nsec < 0) {				\
+			(vsp)->tv_sec--;				\
+			(vsp)->tv_nsec += 1000000000L;			\
+		}							\
+	} while (0)
+        struct timespec futex_start;
+        clockid_t clock_type = CLOCK_MONOTONIC;
+        if (op & FUTEX_CLOCK_REALTIME)
+            clock_type = CLOCK_REALTIME;
+        if (pts)
+            clock_gettime(clock_type, &futex_start);
+        int* to_check = (int*)g2h(cpu, uaddr);
+        int expected = tswap32(val);
+        fprintf(stderr, "qemu_fiber: futex wait 0x%lx %d\n", uaddr, expected);
+        while (__atomic_load_n(to_check, __ATOMIC_ACQUIRE) == expected) {
+            if (pts) {
+                struct timespec now, diff;
+                clock_gettime(clock_type, &now);
+                timespecsub(&now, &futex_start, &diff);
+                if (timespeccmp(&diff, pts, >=))
+                    return 0;
+            }
+            qemu_fibers_switch();
+        }
+        return 0;
+#else
         return do_safe_futex(g2h(cpu, uaddr), op,
                              tswap32(val), pts, NULL, val3);
+#endif
     case FUTEX_WAKE:
         return do_safe_futex(g2h(cpu, uaddr), op, val, NULL, NULL, 0);
     case FUTEX_FD:
@@ -8369,7 +8411,7 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
 #else
             fprintf(stderr, "qemu_fibers: exit %d\n", fiber_current);
             qemu_fibers_kill(fiber_current);
-            qemu_fibers_switch();
+            while (1) qemu_fibers_switch();
 #endif
         }
 
