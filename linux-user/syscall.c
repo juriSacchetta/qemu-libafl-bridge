@@ -6405,7 +6405,7 @@ void qemu_fibers_switch(void)
     swapcontext(&fibers[old].ctx, &fibers[fiber_current].ctx);
 }
 
-#define FIBER_CLOCK_SWICTH 65536
+#define FIBER_CLOCK_SWICTH (2500000000)
 
 void qemu_fibers_may_switch(void);
 void qemu_fibers_may_switch(void) {
@@ -13499,7 +13499,7 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
                     abi_long arg8)
 {
 #ifdef QEMU_FIBERS
-    qemu_fibers_switch();
+    qemu_fibers_may_switch();
 #endif
 
     CPUState *cpu = env_cpu(cpu_env);
