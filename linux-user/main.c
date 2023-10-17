@@ -65,6 +65,11 @@
 #define AT_FLAGS_PRESERVE_ARGV0 (1 << AT_FLAGS_PRESERVE_ARGV0_BIT)
 #endif
 
+#ifdef QEMU_FIBERS
+#include "fibers.h"
+#endif
+
+
 char *exec_path;
 char real_exec_path[PATH_MAX];
 
@@ -676,10 +681,6 @@ static int parse_args(int argc, char **argv)
 
     return optind;
 }
-
-#ifdef QEMU_FIBERS
-void qemu_fibers_init(CPUArchState *env);
-#endif
 
 int main(int argc, char **argv, char **envp)
 {

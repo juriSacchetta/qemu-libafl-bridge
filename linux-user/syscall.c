@@ -144,6 +144,9 @@
 #include "fd-trans.h"
 #include "tcg/tcg.h"
 #include "cpu_loop-common.h"
+#ifdef QEMU_FIBERS
+#include "fibers.h"
+#endif
 
 #ifndef CLONE_IO
 #define CLONE_IO                0x80000000      /* Clone io context */
@@ -6489,8 +6492,9 @@ static abi_long do_prctl(CPUArchState *env, abi_long option, abi_long arg2,
     }
 }
 
+#ifndef NEW_STACK_SIZE
 #define NEW_STACK_SIZE 0x40000
-
+#endif
 
 static pthread_mutex_t clone_lock = PTHREAD_MUTEX_INITIALIZER;
 typedef struct {
@@ -6540,124 +6544,8 @@ static void *clone_func(void *arg)
     /* never exits */
     return NULL;
 }
-
-#else
-#include <ucontext.h>
-
-struct qemu_fiber {
-    CPUArchState *env;
-    ucontext_t ctx;
-    int is_main;
-    int is_zombie; // TODO reuse zombie slots on create
-    int waiting_futex;
-    target_ulong futex_addr;
-};
-
-int fiber_current = 0;
-int fibers_count = 0;
-int fibers_active_count = 0;
-struct qemu_fiber *fibers = NULL;
-int fiber_last_switch = 0;
-
-void force_sig_env(CPUArchState *env, int sig);
-
-void qemu_fibers_init(CPUArchState *env);
-void qemu_fibers_init(CPUArchState *env)
-{
-    int idx = fibers_count++;
-    fibers_active_count++;
-    fibers = realloc(fibers, fibers_count * sizeof(struct qemu_fiber));
-    memset(&fibers[idx], 0, sizeof(struct qemu_fiber));
-    fibers[idx].env = env;
-    fibers[idx].is_main = 1;
-    getcontext(&fibers[idx].ctx); // needed?
-    fiber_current = idx;
-    fiber_last_switch = clock();
-}
-
-void qemu_fibers_kill(int idx);
-void qemu_fibers_kill(int idx)
-{
-    fibers[idx].is_zombie = 1;
-    --fibers_active_count;
-}
-
-void qemu_fibers_switch(void);
-void qemu_fibers_switch(void)
-{
-    // if (fibers_active_count < 2) return;
-
-    fiber_last_switch = clock();
-    int old = fiber_current;
-    do {
-        fiber_current = (fiber_current +1) % fibers_count;
-        if (fiber_current == old)
-            return;
-    } while (fibers[fiber_current].is_zombie);
-    fprintf(stderr, "qemu_fibers: swap from %d to %d\n", old, fiber_current);
-    thread_cpu = env_cpu(fibers[fiber_current].env);
-    swapcontext(&fibers[old].ctx, &fibers[fiber_current].ctx);
-}
-
-#define FIBER_CLOCK_SWICTH (2500000000)
-
-void qemu_fibers_may_switch(void);
-void qemu_fibers_may_switch(void) {
-    if (clock() - fiber_last_switch > FIBER_CLOCK_SWICTH)
-        qemu_fibers_switch();
-}
-
-static void qemu_fibers_exec(int idx)
-{
-    CPUState *cpu;
-    TaskState *ts;
-    
-    fiber_current = idx;
-    cpu = env_cpu(fibers[idx].env);
-    ts = (TaskState *)cpu->opaque;
-    task_settid(ts);
-    thread_cpu = cpu;
-
-    fprintf(stderr, "qemu_fibers: starting %d\n", fiber_current);
-    cpu_loop(fibers[idx].env);
-}
-
-static int qemu_fibers_create(new_thread_info *info)
-{
-    CPUArchState *env;
-    CPUState *cpu;
-
-    int idx = fibers_count++;
-    ++fibers_active_count;
-    int new_tid = 0x3fffffff + idx;
-
-    env = info->env;
-    cpu = env_cpu(env);
-    info->tid = new_tid; // sys_gettid();
-    if (info->child_tidptr)
-        put_user_u32(info->tid, info->child_tidptr);
-    if (info->parent_tidptr)
-        put_user_u32(info->tid, info->parent_tidptr);
-    qemu_guest_random_seed_thread_part2(cpu->random_seed);
-
-    void *stack = malloc(NEW_STACK_SIZE);
-
-    fibers = realloc(fibers, fibers_count * sizeof(struct qemu_fiber));
-    memset(&fibers[idx], 0, sizeof(struct qemu_fiber));
-    
-    getcontext(&fibers[idx].ctx);
-    
-    fibers[idx].env = env;
-    fibers[idx].ctx.uc_stack.ss_sp = stack;
-    fibers[idx].ctx.uc_stack.ss_size = NEW_STACK_SIZE;
-    fibers[idx].ctx.uc_link = NULL;
-    makecontext(&fibers[idx].ctx, (void (*) (void))&qemu_fibers_exec, 1, idx);
-    
-    swapcontext(&fibers[fiber_current].ctx, &fibers[idx].ctx);
-    
-    return new_tid;
-}
 #endif
+
 
 /* do_fork() Must return host values and target errnos (unlike most
    do_*() functions). */
@@ -6753,7 +6641,6 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         sigprocmask(SIG_BLOCK, &sigmask, &info.sigmask);
 #endif
         cpu->random_seed = qemu_guest_random_seed_thread_part1();
-
 #ifdef QEMU_FIBERS
         ret = qemu_fibers_create(&info);
 #else
@@ -7904,48 +7791,7 @@ static int do_futex(CPUState *cpu, bool time64, target_ulong uaddr,
             pts = NULL;
         }
 #ifdef QEMU_FIBERS
-#undef timespeccmp
-#undef timespecsub
-#define	timespeccmp(tsp, usp, cmp)					\
-	(((tsp)->tv_sec == (usp)->tv_sec) ?				\
-	    ((tsp)->tv_nsec cmp (usp)->tv_nsec) :			\
-	    ((tsp)->tv_sec cmp (usp)->tv_sec))
-#define	timespecsub(tsp, usp, vsp)					\
-	do {								\
-		(vsp)->tv_sec = (tsp)->tv_sec - (usp)->tv_sec;		\
-		(vsp)->tv_nsec = (tsp)->tv_nsec - (usp)->tv_nsec;	\
-		if ((vsp)->tv_nsec < 0) {				\
-			(vsp)->tv_sec--;				\
-			(vsp)->tv_nsec += 1000000000L;			\
-		}							\
-	} while (0)
-        struct timespec futex_start;
-        clockid_t clock_type = CLOCK_MONOTONIC;
-        if (op & FUTEX_CLOCK_REALTIME)
-            clock_type = CLOCK_REALTIME;
-        if (pts)
-            clock_gettime(clock_type, &futex_start);
-        int* to_check = (int*)g2h(cpu, uaddr);
-        int expected = tswap32(val);
-        fibers[fiber_current].futex_addr = uaddr;
-        fprintf(stderr, "qemu_fiber: futex wait 0x%lx %d\n", uaddr, expected);
-        while (__atomic_load_n(to_check, __ATOMIC_ACQUIRE) == expected) {
-            if (pts) {
-                struct timespec now, diff;
-                clock_gettime(clock_type, &now);
-                timespecsub(&now, &futex_start, &diff);
-                if (timespeccmp(&diff, pts, >=)) {
-                    fibers[fiber_current].waiting_futex = 0;
-                    break;
-                }
-            }
-            fibers[fiber_current].waiting_futex = 1;
-            qemu_fibers_switch();
-            if (!fibers[fiber_current].waiting_futex)
-                break;
-            to_check = (int*)g2h(cpu, fibers[fiber_current].futex_addr);
-        }
-        return 0;
+    return fibers_futex_wait(cpu, uaddr, base_op, val, pts);
 #else
         val = tswap32(val);
         break;
@@ -7970,34 +7816,11 @@ static int do_futex(CPUState *cpu, bool time64, target_ulong uaddr,
     case FUTEX_CMP_REQUEUE:
     case FUTEX_CMP_REQUEUE_PI:
 #ifdef QEMU_FIBERS
-    {
-        uint32_t val2 = (uint32_t)timeout;
-        int* to_check = (int*)g2h(cpu, uaddr);
-        int expected = tswap32(val3);
-        if (base_op == FUTEX_CMP_REQUEUE &&
-            __atomic_load_n(to_check, __ATOMIC_ACQUIRE) != expected)
-            return -EAGAIN;
-        int i, j, k;
-        for (i = 0, j = 0, k = 0; i < fibers_count; ++i) {
-            if (fibers[i].is_zombie) continue;
-            if (fibers[i].waiting_futex && fibers[i].futex_addr == uaddr) {
-                if (j < val) {
-                    ++j;
-                    fibers[i].waiting_futex = 0;
-                } else if (k < val2) {
-                    ++k;
-                    fibers[i].futex_addr = uaddr2;
-                }
-            }
-        }
-        if (val) qemu_fibers_switch();
-        return j+k;
-    }
+    return fibers_futex_requeue(cpu, base_op, val, val3, uaddr, uaddr2, timeout);
 #else
         val3 = tswap32(val3);
         /* fall through */
 #endif
-
     case FUTEX_WAKE_OP:
         /*
          * For these, the 4th argument is not TIMEOUT, but VAL2.
@@ -9226,9 +9049,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
             rcu_unregister_thread();
             pthread_exit(NULL);
 #else
-            fprintf(stderr, "qemu_fibers: exit %d\n", fiber_current);
-            qemu_fibers_kill(fiber_current);
-            while (1) qemu_fibers_switch();
+            fibers_syscall_exit();
 #endif
         }
 
@@ -12540,7 +12361,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
 #endif
     case TARGET_NR_gettid:
 #ifdef QEMU_FIBERS
-        return (0x3fffffff + fiber_current);
+        return fibers_syscall_gettid();
 #endif
         return get_errno(sys_gettid());
 #ifdef TARGET_NR_readahead
@@ -12838,35 +12659,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
             return -TARGET_EFAULT;
         }
 #ifdef QEMU_FIBERS
-#undef timespeccmp
-#undef timespecsub
-#define	timespeccmp(tsp, usp, cmp)					\
-	(((tsp)->tv_sec == (usp)->tv_sec) ?				\
-	    ((tsp)->tv_nsec cmp (usp)->tv_nsec) :			\
-	    ((tsp)->tv_sec cmp (usp)->tv_sec))
-#define	timespecsub(tsp, usp, vsp)					\
-	do {								\
-		(vsp)->tv_sec = (tsp)->tv_sec - (usp)->tv_sec;		\
-		(vsp)->tv_nsec = (tsp)->tv_nsec - (usp)->tv_nsec;	\
-		if ((vsp)->tv_nsec < 0) {				\
-			(vsp)->tv_sec--;				\
-			(vsp)->tv_nsec += 1000000000L;			\
-		}							\
-	} while (0)
-	    // TODO handle signals
-        struct timespec sleep_start;
-        clockid_t clock_type = arg1;
-        clock_gettime(clock_type, &sleep_start);
-        fprintf(stderr, "qemu_fiber: clock_nanosleep %ld %ld\n", ts.tv_sec, ts.tv_nsec);
-        while (1) {
-            struct timespec now, diff;
-            clock_gettime(clock_type, &now);
-            timespecsub(&now, &sleep_start, &diff);
-            if (timespeccmp(&diff, &ts, >=))
-                break;
-            qemu_fibers_switch();
-        }
-        return 0;
+    return fibers_syscall_clock_nanosleep((clockid_t) arg1, &ts);
 #endif
         ret = get_errno(safe_clock_nanosleep(arg1, arg2,
                                              &ts, arg4 ? &ts : NULL));
@@ -12945,32 +12738,14 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
 
     case TARGET_NR_tkill:
 #ifdef QEMU_FIBERS
-        if (arg1 >= 0x3fffffff) {
-            int idx = arg1 - 0x3fffffff;
-            if (idx < fibers_count) {
-                if (fibers[idx].is_zombie)
-                    return -ESRCH;
-                force_sig_env(fibers[idx].env, arg2);
-                return 0;
-            }
-        }
+    fibers_syscall_tkill(arg1, arg2);
+    return get_errno(safe_tkill((int)arg1, target_to_host_signal(arg2)));
 #endif
-        return get_errno(safe_tkill((int)arg1, target_to_host_signal(arg2)));
-
     case TARGET_NR_tgkill:
 #ifdef QEMU_FIBERS
-        if (arg2 >= 0x3fffffff) {
-            int idx = arg2 - 0x3fffffff;
-            if (idx < fibers_count) {
-                if (fibers[idx].is_zombie)
-                    return -ESRCH;
-                force_sig_env(fibers[idx].env, arg3);
-                return 0;
-            }
-        }
+    fibers_syscall_tgkill(arg1, arg2, arg3);
+    return get_errno(safe_tgkill((int)arg1, (int)arg2, target_to_host_signal(arg3)));
 #endif
-        return get_errno(safe_tgkill((int)arg1, (int)arg2,
-                         target_to_host_signal(arg3)));
 
 #ifdef TARGET_NR_set_robust_list
     case TARGET_NR_set_robust_list:
