@@ -43,3 +43,6 @@
 [submodule "tests/lcitool/libvirt-ci"]
 	path = tests/lcitool/libvirt-ci
 	url = https://gitlab.com/libvirt/libvirt-ci.git
+[submodule "linux-user/pth"]
+	path = linux-user/pth
+	url = https://github.com/juriSacchetta/pth
