@@ -1,4 +1,4 @@
-#include <ucontext.h>
+#include "pth.h"
 
 void qemu_fibers_may_switch(void);
 void qemu_fibers_init(CPUArchState *env);

@@ -57,15 +57,16 @@ void force_sig_env(CPUArchState *env, int sig);
 
 void qemu_fibers_init(CPUArchState *env)
 {
-    int idx = fibers_count++;
-    fibers_active_count++;
-    fibers = realloc(fibers, fibers_count * sizeof(struct qemu_fiber));
-    memset(&fibers[idx], 0, sizeof(struct qemu_fiber));
-    fibers[idx].env = env;
-    fibers[idx].is_main = 1;
-    getcontext(&fibers[idx].ctx); // needed?
-    fiber_current = idx;
-    fiber_last_switch = clock();
+    // int idx = fibers_count++;
+    // fibers_active_count++;
+    // fibers = realloc(fibers, fibers_count * sizeof(struct qemu_fiber));
+    // memset(&fibers[idx], 0, sizeof(struct qemu_fiber));
+    // fibers[idx].env = env;
+    // fibers[idx].is_main = 1;
+    // getcontext(&fibers[idx].ctx); // needed?
+    // fiber_current = idx;
+    // fiber_last_switch = clock();
+    pth_init();
 }
 
 static void qemu_fibers_kill(int idx)
@@ -87,7 +88,7 @@ static void qemu_fibers_switch(void)
     } while (fibers[fiber_current].is_zombie);
     fprintf(stderr, "qemu_fibers: swap from %d to %d\n", old, fiber_current);
     thread_cpu = env_cpu(fibers[fiber_current].env);
-    swapcontext(&fibers[old].ctx, &fibers[fiber_current].ctx);
+    // TODO: swapcontext(&fibers[old].ctx, &fibers[fiber_current].ctx);
 }
 
 void qemu_fibers_may_switch(void) {
@@ -95,19 +96,19 @@ void qemu_fibers_may_switch(void) {
         qemu_fibers_switch();
 }
 
-static void qemu_fibers_exec(int idx)
+static void qemu_fibers_exec(void *idx)
 {
     CPUState *cpu;
     TaskState *ts;
     
-    fiber_current = idx;
-    cpu = env_cpu(fibers[idx].env);
+    fiber_current = *((int *)idx);
+    cpu = env_cpu(fibers[fiber_current].env);
     ts = (TaskState *)cpu->opaque;
     task_settid(ts);
     thread_cpu = cpu;
 
     fprintf(stderr, "qemu_fibers: starting %d\n", fiber_current);
-    cpu_loop(fibers[idx].env);
+    cpu_loop(fibers[fiber_current].env);
 }
 
 int qemu_fibers_create(void *info_void)
@@ -135,15 +136,22 @@ int qemu_fibers_create(void *info_void)
     fibers = realloc(fibers, fibers_count * sizeof(struct qemu_fiber));
     memset(&fibers[idx], 0, sizeof(struct qemu_fiber));
     
-    getcontext(&fibers[idx].ctx);
+    // TODO: getcontext(&fibers[idx].ctx);
     
     fibers[idx].env = env;
     fibers[idx].ctx.uc_stack.ss_sp = stack;
     fibers[idx].ctx.uc_stack.ss_size = NEW_STACK_SIZE;
     fibers[idx].ctx.uc_link = NULL;
-    makecontext(&fibers[idx].ctx, (void (*) (void))&qemu_fibers_exec, 1, idx);
     
-    swapcontext(&fibers[fiber_current].ctx, &fibers[idx].ctx);
+    pth_attr_t attr = pth_attr_new();
+    pth_attr_set(attr, PTH_ATTR_NAME, "ticker");
+    pth_attr_set(attr, PTH_ATTR_STACK_SIZE, NEW_STACK_SIZE);
+    pth_attr_set(attr, PTH_ATTR_JOINABLE, FALSE);
+
+    pth_spawn(attr, (void* (*) (void*))qemu_fibers_exec, (void *) &idx);
+    // TODO: makecontext(&fibers[idx].ctx, (void (*) (void))&qemu_fibers_exec, 1, idx);
+    
+    // TODO: swapcontext(&fibers[fiber_current].ctx, &fibers[idx].ctx);
     
     return new_tid;
 }
