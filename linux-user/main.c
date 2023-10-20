@@ -190,14 +190,14 @@ void qemu_cpu_kick(CPUState *cpu)
 }
 
 #ifdef QEMU_FIBERS
-extern int fiber_current;
+extern int fibers_count;
 #endif
 
 void task_settid(TaskState *ts)
 {
 #ifdef QEMU_FIBERS
     if (ts->ts_tid == 0) {
-        ts->ts_tid = (pid_t)(0x3fffffff + fiber_current);
+        ts->ts_tid = (pid_t)(fibers_count);
     }
 #else
     if (ts->ts_tid == 0) {

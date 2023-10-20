@@ -144,6 +144,7 @@
 #include "fd-trans.h"
 #include "tcg/tcg.h"
 #include "cpu_loop-common.h"
+
 #ifdef QEMU_FIBERS
 #include "fibers.h"
 #endif
@@ -651,9 +652,10 @@ static type safe_##name(type1 arg1, type2 arg2, type3 arg3, type4 arg4, \
 { \
     return safe_syscall(__NR_##name, arg1, arg2, arg3, arg4, arg5, arg6); \
 }
-
+#ifndef QEMU_FIBERS 
 safe_syscall3(ssize_t, read, int, fd, void *, buff, size_t, count)
 safe_syscall3(ssize_t, write, int, fd, const void *, buff, size_t, count)
+#endif
 safe_syscall4(int, openat, int, dirfd, const char *, pathname, \
               int, flags, mode_t, mode)
 #if defined(TARGET_NR_wait4) || defined(TARGET_NR_waitpid)
@@ -688,8 +690,10 @@ safe_syscall6(int,futex_time64,int *,uaddr,int,op,int,val, \
 #endif
 safe_syscall2(int, rt_sigsuspend, sigset_t *, newset, size_t, sigsetsize)
 safe_syscall2(int, kill, pid_t, pid, int, sig)
+#ifndef QEMU_FIBERS
 safe_syscall2(int, tkill, int, tid, int, sig)
 safe_syscall3(int, tgkill, int, tgid, int, pid, int, sig)
+#endif
 safe_syscall3(ssize_t, readv, int, fd, const struct iovec *, iov, int, iovcnt)
 safe_syscall3(ssize_t, writev, int, fd, const struct iovec *, iov, int, iovcnt)
 safe_syscall5(ssize_t, preadv, int, fd, const struct iovec *, iov, int, iovcnt,
@@ -711,7 +715,7 @@ safe_syscall4(int, rt_sigtimedwait, const sigset_t *, these, siginfo_t *, uinfo,
 #endif
 safe_syscall4(int, accept4, int, fd, struct sockaddr *, addr, socklen_t *, len,
               int, flags)
-#if defined(TARGET_NR_nanosleep)
+#if defined(TARGET_NR_nanosleep) && !defined(QEMU_FIBERS)
 safe_syscall2(int, nanosleep, const struct timespec *, req,
               struct timespec *, rem)
 #endif
@@ -6642,7 +6646,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
 #endif
         cpu->random_seed = qemu_guest_random_seed_thread_part1();
 #ifdef QEMU_FIBERS
-        ret = qemu_fibers_create(&info);
+        ret = qemu_fibers_spawn(&info);
 #else
         ret = pthread_create(&info.thread, &attr, clone_func, &info);
         /* TODO: Free new CPU state if thread creation failed.  */
@@ -9049,7 +9053,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
             rcu_unregister_thread();
             pthread_exit(NULL);
 #else
-            fibers_syscall_exit();
+            fibers_syscall_exit(NULL); //TODO: check the return value
 #endif
         }
 
@@ -9058,12 +9062,22 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
         _exit(arg1);
         return 0; /* avoid warning */
     case TARGET_NR_read:
+        //TODO: in case of QEMU_FIBERS, we don't need to block??
+        
         if (arg2 == 0 && arg3 == 0) {
-            return get_errno(safe_read(arg1, 0, 0));
+            #ifdef QEMU_FIBERS
+                return fibers_read(arg1, 0, 0); //TODO: Manage the errno return
+            #else  
+                return get_errno(safe_read(arg1, 0, 0));
+            #endif
         } else {
             if (!(p = lock_user(VERIFY_WRITE, arg2, arg3, 0)))
                 return -TARGET_EFAULT;
-            ret = get_errno(safe_read(arg1, p, arg3));
+            #ifdef QEMU_FIBERS
+                ret = fibers_read(arg1, p, arg3);
+            #else
+                ret = get_errno(safe_read(arg1, p, arg3));
+            #endif
             if (ret >= 0 &&
                 fd_trans_host_to_target_data(arg1)) {
                 ret = fd_trans_host_to_target_data(arg1)(p, ret);
@@ -9073,7 +9087,11 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
         return ret;
     case TARGET_NR_write:
         if (arg2 == 0 && arg3 == 0) {
-            return get_errno(safe_write(arg1, 0, 0));
+            #ifdef QEMU_FIBERS
+                return fibers_write(arg1,0,0);
+            #else
+                return get_errno(safe_write(arg1, 0, 0));
+            #endif
         }
         if (!(p = lock_user(VERIFY_READ, arg2, arg3, 1)))
             return -TARGET_EFAULT;
@@ -9082,11 +9100,19 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
             memcpy(copy, p, arg3);
             ret = fd_trans_target_to_host_data(arg1)(copy, arg3);
             if (ret >= 0) {
-                ret = get_errno(safe_write(arg1, copy, ret));
+                #ifdef QEMU_FIBERS
+                    ret = fibers_write(arg1, copy, ret);
+                #else
+                    ret = get_errno(safe_write(arg1, copy, ret));
+                #endif
             }
             g_free(copy);
         } else {
-            ret = get_errno(safe_write(arg1, p, arg3));
+            #ifdef QEMU_FIBERS
+                ret = fibers_write(arg1, p, arg3);
+            #else
+                ret = get_errno(safe_write(arg1, p, arg3));
+            #endif
         }
         unlock_user(p, arg2, 0);
         return ret;
@@ -11398,6 +11424,10 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
 #endif
 #if defined(TARGET_NR_nanosleep)
     case TARGET_NR_nanosleep:
+
+    #ifdef QEMU_FIBERS
+
+    #else 
         {
             struct timespec req, rem;
             target_to_host_timespec(&req, arg1);
@@ -11407,6 +11437,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
             }
         }
         return ret;
+    #endif
 #endif
     case TARGET_NR_prctl:
         return do_prctl(cpu_env, arg1, arg2, arg3, arg4, arg5);
@@ -12738,12 +12769,14 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
 
     case TARGET_NR_tkill:
 #ifdef QEMU_FIBERS
-    fibers_syscall_tkill(arg1, arg2);
+    return fibers_syscall_tkill(arg1, arg2);
+#else
     return get_errno(safe_tkill((int)arg1, target_to_host_signal(arg2)));
 #endif
     case TARGET_NR_tgkill:
 #ifdef QEMU_FIBERS
-    fibers_syscall_tgkill(arg1, arg2, arg3);
+    return fibers_syscall_tgkill(arg1, arg2, arg3);  
+#else
     return get_errno(safe_tgkill((int)arg1, (int)arg2, target_to_host_signal(arg3)));
 #endif
 
@@ -13704,10 +13737,6 @@ abi_long do_syscall(CPUArchState *cpu_env, int num, abi_long arg1,
                     abi_long arg5, abi_long arg6, abi_long arg7,
                     abi_long arg8)
 {
-#ifdef QEMU_FIBERS
-    qemu_fibers_may_switch();
-#endif
-
     CPUState *cpu = env_cpu(cpu_env);
     abi_long ret;
 
