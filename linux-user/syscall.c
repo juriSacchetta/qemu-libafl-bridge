@@ -680,7 +680,7 @@ safe_syscall5(int, ppoll, struct pollfd *, ufds, unsigned int, nfds,
 safe_syscall6(int, epoll_pwait, int, epfd, struct epoll_event *, events,
               int, maxevents, int, timeout, const sigset_t *, sigmask,
               size_t, sigsetsize)
-#if defined(__NR_futex)
+#if defined(__NR_futex) && !defined(QEMU_FIBERS)
 safe_syscall6(int,futex,int *,uaddr,int,op,int,val, \
               const struct timespec *,timeout,int *,uaddr2,int,val3)
 #endif
@@ -7739,6 +7739,7 @@ static int do_sys_futex(int *uaddr, int op, int val,
     g_assert_not_reached();
 }
 
+#ifndef QEMU_FIBERS
 static int do_safe_futex(int *uaddr, int op, int val,
                          const struct timespec *timeout, int *uaddr2,
                          int val3)
@@ -7763,6 +7764,7 @@ static int do_safe_futex(int *uaddr, int op, int val,
 #endif /* HOST_LONG_BITS == 64 */
     return -TARGET_ENOSYS;
 }
+#endif
 
 /* ??? Using host futex calls even when target atomic operations
    are not really atomic probably breaks things.  However implementing
@@ -7785,28 +7787,17 @@ static int do_futex(CPUState *cpu, bool time64, target_ulong uaddr,
     base_op = op;
 #endif
     switch (base_op) {
-    // TODO implement BITSET for fibers
     case FUTEX_WAIT:
     case FUTEX_WAIT_BITSET:
-        if (timeout) {
-            pts = &ts;
-            target_to_host_timespec(pts, timeout);
-        } else {
-            pts = NULL;
-        }
-#ifdef QEMU_FIBERS
-    return fibers_futex_wait(cpu, uaddr, base_op, val, pts);
-#else
         val = tswap32(val);
         break;
-#endif
-//   case FUTEX_WAIT_REQUEUE_PI:
-//         val = tswap32(val);
-//         haddr2 = g2h(cpu, uaddr2);
-//         break;
-//     case FUTEX_LOCK_PI:
-//     case FUTEX_LOCK_PI2:
-//         break;
+    case FUTEX_WAIT_REQUEUE_PI:
+        val = tswap32(val);
+        haddr2 = g2h(cpu, uaddr2);
+        break;
+    case FUTEX_LOCK_PI:
+    case FUTEX_LOCK_PI2:
+        break;
     case FUTEX_WAKE:
     case FUTEX_WAKE_BITSET:
     case FUTEX_TRYLOCK_PI:
@@ -7814,17 +7805,14 @@ static int do_futex(CPUState *cpu, bool time64, target_ulong uaddr,
         timeout = 0;
         break;
     case FUTEX_FD:
-        return do_safe_futex(g2h(cpu, uaddr),
-                             op, val, NULL, NULL, 0);
-    case FUTEX_REQUEUE:
+        val = target_to_host_signal(val);
+        timeout = 0;
+        break;
     case FUTEX_CMP_REQUEUE:
     case FUTEX_CMP_REQUEUE_PI:
-#ifdef QEMU_FIBERS
-    return fibers_futex_requeue(cpu, base_op, val, val3, uaddr, uaddr2, timeout);
-#else
         val3 = tswap32(val3);
         /* fall through */
-#endif
+    case FUTEX_REQUEUE:
     case FUTEX_WAKE_OP:
         /*
          * For these, the 4th argument is not TIMEOUT, but VAL2.
@@ -7847,7 +7835,11 @@ static int do_futex(CPUState *cpu, bool time64, target_ulong uaddr,
             return -TARGET_EFAULT;
         }
     }
-    return do_safe_futex(g2h(cpu, uaddr), op, val, pts, haddr2, val3);
+    #ifdef QEMU_FIBERS
+        return fibers_do_futex(g2h(cpu, uaddr), base_op, val, pts, haddr2, val3);
+    #else
+        return do_safe_futex(g2h(cpu, uaddr), op, val, pts, haddr2, val3);
+    #endif
 }
 #endif
 
@@ -9063,60 +9055,64 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
         return 0; /* avoid warning */
     case TARGET_NR_read:
         //TODO: in case of QEMU_FIBERS, we don't need to block??
-        
-        if (arg2 == 0 && arg3 == 0) {
-            #ifdef QEMU_FIBERS
-                return fibers_read(arg1, 0, 0); //TODO: Manage the errno return
-            #else  
-                return get_errno(safe_read(arg1, 0, 0));
-            #endif
-        } else {
-            if (!(p = lock_user(VERIFY_WRITE, arg2, arg3, 0)))
-                return -TARGET_EFAULT;
-            #ifdef QEMU_FIBERS
-                ret = fibers_read(arg1, p, arg3);
-            #else
-                ret = get_errno(safe_read(arg1, p, arg3));
-            #endif
+        #ifdef QEMU_FIBERS
+            p = g2h(cpu, arg2);
+            ret = fibers_read(arg1, p, arg3);
             if (ret >= 0 &&
                 fd_trans_host_to_target_data(arg1)) {
                 ret = fd_trans_host_to_target_data(arg1)(p, ret);
             }
-            unlock_user(p, arg2, ret);
-        }
-        return ret;
-    case TARGET_NR_write:
-        if (arg2 == 0 && arg3 == 0) {
-            #ifdef QEMU_FIBERS
-                return fibers_write(arg1,0,0);
-            #else
-                return get_errno(safe_write(arg1, 0, 0));
-            #endif
-        }
-        if (!(p = lock_user(VERIFY_READ, arg2, arg3, 1)))
-            return -TARGET_EFAULT;
-        if (fd_trans_target_to_host_data(arg1)) {
-            void *copy = g_malloc(arg3);
-            memcpy(copy, p, arg3);
-            ret = fd_trans_target_to_host_data(arg1)(copy, arg3);
-            if (ret >= 0) {
-                #ifdef QEMU_FIBERS
-                    ret = fibers_write(arg1, copy, ret);
-                #else
-                    ret = get_errno(safe_write(arg1, copy, ret));
-                #endif
+            return ret;
+        #else
+            if (arg2 == 0 && arg3 == 0) {
+                return get_errno(safe_read(arg1, 0, 0));
+            } else {
+                if (!(p = lock_user(VERIFY_WRITE, arg2, arg3, 0)))
+                    return -TARGET_EFAULT;
+                    ret = get_errno(safe_read(arg1, p, arg3));
+                if (ret >= 0 &&
+                    fd_trans_host_to_target_data(arg1)) {
+                    ret = fd_trans_host_to_target_data(arg1)(p, ret);
+                }
+                unlock_user(p, arg2, ret);
             }
-            g_free(copy);
-        } else {
-            #ifdef QEMU_FIBERS
-                ret = fibers_write(arg1, p, arg3);
-            #else
+            return ret;
+        #endif
+    case TARGET_NR_write:
+        #ifdef QEMU_FIBERS
+            void *p = g2h(cpu, arg2);
+            if (fd_trans_target_to_host_data(arg1)) {
+                void *copy = g_malloc(arg3);
+                memcpy(copy, p, arg3);
+                ret = fd_trans_target_to_host_data(arg1)(copy, arg3);
+                if (ret >= 0) {
+                    ret = get_errno(fibers_write(arg1, copy, ret));
+                }
+                g_free(copy);
+            } else {
+                ret = get_errno(fibers_write(arg1, p, arg3));
+            }
+            return ret;
+        #else
+            if (arg2 == 0 && arg3 == 0) {
+                return get_errno(safe_write(arg1, 0, 0));
+            }
+            if (!(p = lock_user(VERIFY_READ, arg2, arg3, 1)))
+                return -TARGET_EFAULT;
+            if (fd_trans_target_to_host_data(arg1)) {
+                void *copy = g_malloc(arg3);
+                memcpy(copy, p, arg3);
+                ret = fd_trans_target_to_host_data(arg1)(copy, arg3);
+                if (ret >= 0) {
+                    ret = get_errno(safe_write(arg1, copy, ret));
+                }
+                g_free(copy);
+            } else {
                 ret = get_errno(safe_write(arg1, p, arg3));
-            #endif
-        }
-        unlock_user(p, arg2, 0);
-        return ret;
-
+            }
+            unlock_user(p, arg2, 0);
+            return ret;
+        #endif
 #ifdef TARGET_NR_open
     case TARGET_NR_open:
         if (!(p = lock_user_string(arg1)))

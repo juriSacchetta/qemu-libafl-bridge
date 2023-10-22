@@ -4,9 +4,7 @@ void qemu_fibers_init(CPUArchState *env);
 int qemu_fibers_spawn(void *info);
 
 //patches for syscalls and futexes
-int fibers_futex_wait(CPUState *cpu, target_ulong uaddr, int op, int val, struct timespec *pts);
-int fibers_futex_requeue(CPUState *cpu, int base_op, int val, int val3, target_ulong uaddr, target_ulong uaddr2, target_ulong timeout);
-
+int fibers_do_futex(int *uaddr, int op, int val, const struct timespec *timeout, int *uaddr2, int val3);
 void fibers_syscall_exit(void*);
 int fibers_syscall_tkill(abi_long arg1, abi_long arg2);
 int fibers_syscall_tgkill(abi_long arg1, abi_long arg2, abi_long arg3);
