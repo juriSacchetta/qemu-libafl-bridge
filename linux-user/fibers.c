@@ -11,15 +11,6 @@
 
 void force_sig_env(CPUArchState *env, int sig);
 
-
-typedef struct {
-    CPUArchState *env;
-    int tid;
-    abi_ulong child_tidptr;
-    abi_ulong parent_tidptr;
-    sigset_t sigmask;
-} new_thread_info;
-
 typedef struct qemu_fiber{
     CPUArchState *env;
     int fibers_tid;
@@ -71,60 +62,27 @@ void qemu_fibers_init(CPUArchState *env)
     qemu_fiber * new = malloc(sizeof(qemu_fiber));
     memset(new, 0, sizeof(qemu_fiber));
 
+    pth_save_thread_cpu_addr((uintptr_t *)&thread_cpu);
+
     new->env = env;
     new->fibers_tid = 0;
-    new->thread = pth_init();
+    new->thread = pth_init((uintptr_t)env_cpu(env));
     QLIST_INSERT_HEAD(&fiber_list_head, new, entry);
-}
-
-static void qemu_fibers_exec(void *fiber_instance)
-{
-    CPUState *cpu;
-    TaskState *ts;
-    
-    qemu_fiber *current = ((qemu_fiber *) fiber_instance);
-    cpu = env_cpu(current->env);
-    ts = (TaskState *)cpu->opaque;
-    task_settid(ts);
-    thread_cpu = cpu;
-
-    fprintf(stderr, "qemu_fibers: starting 0x%d\n", current->fibers_tid - BASE_FIBERS_TID);
-    cpu_loop(current->env);
-}
-
-int qemu_fibers_spawn(void *info_void)
-{
-    //TODO: Creare una interfacia unica per new_thread_info
-    new_thread_info *info = (new_thread_info*)info_void;
-    CPUArchState *env;
-    CPUState *cpu;
-
-    int new_tid = fibers_count++;
-    env = info->env;
-    cpu = env_cpu(env);
-    info->tid = new_tid; // sys_gettid();
-    if (info->child_tidptr)
-        put_user_u32(info->tid, info->child_tidptr);
-    if (info->parent_tidptr)
-        put_user_u32(info->tid, info->parent_tidptr);
-    qemu_guest_random_seed_thread_part2(cpu->random_seed);
-
-    qemu_fiber *new = malloc(sizeof(qemu_fiber));
-    memset(new, 0, sizeof(qemu_fiber));
-
-    QLIST_INSERT_HEAD(&fiber_list_head, new, entry);
-    
-    new->env = env;
-    new->fibers_tid = new_tid;
-    fprintf(stderr, "qemu_fibers: spawning 0x%d\n", new_tid - BASE_FIBERS_TID);
-    new->thread = pth_spawn(PTH_ATTR_DEFAULT, (void* (*) (void*))qemu_fibers_exec, (void *) new);
-    return new_tid;
 }
 
 /*
 Thread Control
 */
 
+int register_fiber(pth_t thread, CPUArchState *cpu) {
+    qemu_fiber *new = malloc(sizeof(qemu_fiber));
+    memset(new, 0, sizeof(qemu_fiber));
+    new->env = cpu;
+    new->thread = thread;
+    new->fibers_tid = ++fibers_count;
+    QLIST_INSERT_HEAD(&fiber_list_head, new, entry);
+    return new->fibers_tid;
+}
 static fibers_futex * create_futex(int *uaddr, uint32_t mask) {
     fibers_futex *new = malloc(sizeof(fibers_futex));
     memset(new, 0, sizeof(fibers_futex));
@@ -311,6 +269,19 @@ int fibers_syscall_clock_nanosleep(clockid_t clock_id, struct timespec *ts){
     return pth_nanosleep(ts, NULL); //TODO: Check this NULL
 }
 
+int fibers_syscall_pread(int fd, void *buf, size_t nbytes, off_t offset) {
+    return pth_pread(fd, buf, nbytes, offset);
+}
+int fibers_syscall_pwrite(int fd, const void *buf, size_t nbytes, off_t offset) {
+    return pth_pwrite(fd, buf, nbytes, offset);
+}
+
+int fibers_syscall_pread64(int fd, void *buf, size_t nbytes, off_t offset) {
+    return fibers_syscall_pread(fd, buf, nbytes, offset);
+}
+int fibers_syscall_pwrite64(int fd, const void *buf, size_t nbytes, off_t offset) {
+    return fibers_syscall_pwrite(fd, buf, nbytes, offset);
+}
 
 /*##########
 # I/O OPERATIONS

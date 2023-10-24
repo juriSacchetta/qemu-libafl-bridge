@@ -1,7 +1,18 @@
 #include "pth.h"
 
+typedef struct {
+    CPUArchState *env;
+    pth_mutex_t mutex;
+    pth_cond_t cond;
+    pth_t thread;
+    int tid;
+    abi_ulong child_tidptr;
+    abi_ulong parent_tidptr;
+    sigset_t sigmask;
+} new_thread_info;
+
 void qemu_fibers_init(CPUArchState *env);
-int qemu_fibers_spawn(void *info);
+int register_fiber(pth_t thread, CPUArchState *cpu);
 
 //patches for syscalls and futexes
 int fibers_do_futex(int *uaddr, int op, int val, const struct timespec *timeout, int *uaddr2, int val3);
@@ -11,8 +22,11 @@ int fibers_syscall_tgkill(abi_long arg1, abi_long arg2, abi_long arg3);
 int fibers_syscall_gettid(void);
 int fibers_syscall_nanosleep(struct timespec *ts);
 int fibers_syscall_clock_nanosleep(clockid_t clock_id, struct timespec *ts);
-int fibers_syscall_clone(CPUState *cpu, target_ulong clone_flags, target_ulong newsp, target_ulong parent_tidptr, target_ulong child_tidptr, target_ulong tls);
 
+int fibers_syscall_pread(int fd, void *buf, size_t nbytes, off_t offset);
+int fibers_syscall_pwrite(int fd, const void *buf, size_t nbytes, off_t offset);
+int fibers_syscall_pread64(int fd, void *buf, size_t nbytes, off_t offset);
+int fibers_syscall_pwrite64(int fd, const void *buf, size_t nbytes, off_t offset);
 
 /*##########
 # I/O OPERATIONS

@@ -6501,54 +6501,68 @@ static abi_long do_prctl(CPUArchState *env, abi_long option, abi_long arg2,
 #endif
 
 static pthread_mutex_t clone_lock = PTHREAD_MUTEX_INITIALIZER;
+#ifndef QEMU_FIBERS
 typedef struct {
     CPUArchState *env;
-#ifndef QEMU_FIBERS
     pthread_mutex_t mutex;
     pthread_cond_t cond;
     pthread_t thread;
-#endif
     uint32_t tid;
     abi_ulong child_tidptr;
     abi_ulong parent_tidptr;
     sigset_t sigmask;
 } new_thread_info;
+#endif
 
-#ifndef QEMU_FIBERS
 static void *clone_func(void *arg)
 {
     new_thread_info *info = arg;
     CPUArchState *env;
     CPUState *cpu;
     TaskState *ts;
-
+#ifndef QEMU_FIBERS
     rcu_register_thread();
     tcg_register_thread();
+    info->tid = sys_gettid();
+#endif
     env = info->env;
     cpu = env_cpu(env);
     thread_cpu = cpu;
     ts = (TaskState *)cpu->opaque;
-    info->tid = sys_gettid();
     task_settid(ts);
     if (info->child_tidptr)
         put_user_u32(info->tid, info->child_tidptr);
     if (info->parent_tidptr)
         put_user_u32(info->tid, info->parent_tidptr);
     qemu_guest_random_seed_thread_part2(cpu->random_seed);
+#ifdef QEMU_FIBERS
+    //pth_sigmask(SIG_SETMASK, &info->sigmask, NULL);
+    /* Signal to the parent that we're ready.  */
+    pth_mutex_acquire(&info->mutex, FALSE, NULL);
+    pth_cond_notify(&info->cond, TRUE);
+    pth_mutex_release(&info->mutex);
+
+    /*TODO: (Probabilmente serve solo in caso di fork) Wait until the parent has finished initializing the tls state.  */
+    // pthread_mutex_lock(&clone_lock);
+    // pthread_mutex_unlock(&clone_lock);
+
+    fprintf(stderr, "qemu_fibers: starting 0x%d\n", info->tid);
+#else
     /* Enable signals.  */
     sigprocmask(SIG_SETMASK, &info->sigmask, NULL);
     /* Signal to the parent that we're ready.  */
     pthread_mutex_lock(&info->mutex);
     pthread_cond_broadcast(&info->cond);
     pthread_mutex_unlock(&info->mutex);
-    /* Wait until the parent has finished initializing the tls state.  */
+    /* Wait until the parent has finished initialiing the tls state.  */
     pthread_mutex_lock(&clone_lock);
     pthread_mutex_unlock(&clone_lock);
+#endif
     cpu_loop(env);
     /* never exits */
     return NULL;
 }
-#endif
+
 
 
 /* do_fork() Must return host values and target errnos (unlike most
@@ -6575,7 +6589,9 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
     if (flags & CLONE_VM) {
         TaskState *parent_ts = (TaskState *)cpu->opaque;
         new_thread_info info;
-#ifndef QEMU_FIBERS
+#ifdef QEMU_FIBERS
+        pth_attr_t attr = pth_attr_new();
+#else
         pthread_attr_t attr;
 #endif
 
@@ -6622,11 +6638,17 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         }
 
         memset(&info, 0, sizeof(info));
-#ifndef QEMU_FIBERS
+
+#ifdef QEMU_FIBERS
+        pth_mutex_init(&info.mutex);
+        pth_mutex_acquire(&info.mutex, FALSE, NULL);
+        pth_cond_init(&info.cond);
+#else
         pthread_mutex_init(&info.mutex, NULL);
         pthread_mutex_lock(&info.mutex);
         pthread_cond_init(&info.cond, NULL);
 #endif
+
         info.env = new_env;
         if (flags & CLONE_CHILD_SETTID) {
             info.child_tidptr = child_tidptr;
@@ -6634,8 +6656,15 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         if (flags & CLONE_PARENT_SETTID) {
             info.parent_tidptr = parent_tidptr;
         }
-
-#ifndef QEMU_FIBERS
+#ifdef QEMU_FIBERS
+        pth_attr_init(attr);
+        pth_attr_set(attr, PTH_ATTR_STACK_SIZE, NEW_STACK_SIZE);
+        pth_attr_set(attr, PTH_ATTR_JOINABLE, TRUE);
+        /*TODO: It is not safe to deliver signals until the child has finished
+           initializing, so temporarily block all signals.  */
+        // sigfillset(&sigmask);
+        // pth_sigmask(SIG_BLOCK, &sigmask, NULL);
+#else
         ret = pthread_attr_init(&attr);
         ret = pthread_attr_setstacksize(&attr, NEW_STACK_SIZE);
         ret = pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
@@ -6646,11 +6675,19 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
 #endif
         cpu->random_seed = qemu_guest_random_seed_thread_part1();
 #ifdef QEMU_FIBERS
-        ret = qemu_fibers_spawn(&info);
+        pth_t thread = pth_spawn(attr, (uintptr_t)env_cpu(info.env), clone_func, &info);
+        //TODO: manage sigs
+        ret = register_fiber(thread, env);
+        free(attr);
+        if (ret != -1) {
+            /* Wait for the child to initialize.  */
+            pth_cond_await(&info.cond, &info.mutex, NULL);
+        }
+
+        pth_mutex_release(&info.mutex);
 #else
         ret = pthread_create(&info.thread, &attr, clone_func, &info);
         /* TODO: Free new CPU state if thread creation failed.  */
-
         sigprocmask(SIG_SETMASK, &info.sigmask, NULL);
         pthread_attr_destroy(&attr);
         if (ret == 0) {
@@ -6666,6 +6703,10 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         pthread_mutex_unlock(&clone_lock);
 #endif
     } else {
+        #ifdef QEMU_FIBERS
+        fprintf(stderr, "Fork not implemented");
+        exit(-1);
+        #endif
         /* if no CLONE_VM, we consider it is a fork */
         if (flags & CLONE_INVALID_FORK_FLAGS) {
             return -TARGET_EINVAL;
@@ -9006,7 +9047,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
     struct statfs stfs;
 #endif
     void *p;
-
+    //fprintf(stderr, "thread_cpu: %p\n", (void *)thread_cpu);
     switch(num) {
     case TARGET_NR_exit:
         /* In old applications this may be used to implement _exit(2).
@@ -10673,6 +10714,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
         return get_errno(shutdown(arg1, arg2));
 #endif
 #if defined(TARGET_NR_getrandom) && defined(__NR_getrandom)
+//TODO: in case of QEMU_FIBER this lock is not needed
     case TARGET_NR_getrandom:
         p = lock_user(VERIFY_WRITE, arg1, arg2, 0);
         if (!p) {
@@ -11443,6 +11485,23 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
         return do_arch_prctl(cpu_env, arg1, arg2);
 #endif
 #ifdef TARGET_NR_pread64
+    #ifdef QEMU_FIBERS
+    case TARGET_NR_pread64:
+        p = g2h(cpu, arg2);
+        if (regpairs_aligned(cpu_env, num)) {
+            arg4 = arg5;
+            arg5 = arg6;
+        }
+
+        return get_errno(fibers_syscall_pread64(arg1, p, arg3, target_offset64(arg4, arg5)));
+    case TARGET_NR_pwrite64:
+        p = g2h(cpu, arg2);
+        if (regpairs_aligned(cpu_env, num)) {
+            arg4 = arg5;
+            arg5 = arg6;
+        }
+        return get_errno(fibers_syscall_pwrite64(arg1, p, arg3, target_offset64(arg4, arg5)));
+    #else
     case TARGET_NR_pread64:
         if (regpairs_aligned(cpu_env, num)) {
             arg4 = arg5;
@@ -11477,6 +11536,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
         ret = get_errno(pwrite64(arg1, p, arg3, target_offset64(arg4, arg5)));
         unlock_user(p, arg2, 0);
         return ret;
+    #endif
 #endif
     case TARGET_NR_getcwd:
         if (!(p = lock_user(VERIFY_WRITE, arg1, arg2, 0)))
@@ -13763,6 +13823,7 @@ abi_long do_syscall(CPUArchState *cpu_env, int num, abi_long arg1,
     if (unlikely(qemu_loglevel_mask(LOG_STRACE))) {
         print_syscall_ret(cpu_env, num, ret, arg1, arg2,
                           arg3, arg4, arg5, arg6);
+        fprintf(stderr, "\n");
     }
 
     record_syscall_return(cpu, num, ret);
