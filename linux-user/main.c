@@ -195,15 +195,13 @@ extern int fibers_count;
 
 void task_settid(TaskState *ts)
 {
-#ifdef QEMU_FIBERS
     if (ts->ts_tid == 0) {
-        ts->ts_tid = (pid_t)(fibers_count);
-    }
-#else
-    if (ts->ts_tid == 0) {
+    #ifdef QEMU_FIBERS
+        ts->ts_tid = fibers_syscall_gettid();
+    #else
         ts->ts_tid = (pid_t)syscall(SYS_gettid);
+    #endif
     }
-#endif
 }
 
 void stop_all_tasks(void)
@@ -948,6 +946,9 @@ int main(int argc, char **argv, char **envp)
     }
     target_argv[target_argc] = NULL;
 
+#ifdef QEMU_FIBERS
+    qemu_fibers_init(env);
+#endif 
     ts = g_new0(TaskState, 1);
     init_task_state(ts);
     /* build Task State */
@@ -1026,9 +1027,6 @@ int main(int argc, char **argv, char **envp)
     qemu_semihosting_guestfd_init();
 #endif
 
-#ifdef QEMU_FIBERS
-    qemu_fibers_init(env);
-#endif
     cpu_loop(env);
     /* never exits */
     return 0;
