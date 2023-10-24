@@ -1,5 +1,9 @@
 #include "pth.h"
 
+#ifndef QEMU_FIBERS
+#define QEMU_FIBERS
+#endif 
+
 typedef struct {
     CPUArchState *env;
     pth_mutex_t mutex;
