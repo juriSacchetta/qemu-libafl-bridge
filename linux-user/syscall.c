@@ -339,7 +339,7 @@ _syscall3(int,sys_close_range,int,first,int,last,int,flags)
 #define CLOSE_RANGE_CLOEXEC     (1U << 2)
 #endif
 #endif
-#if defined(__NR_futex)
+#if defined(__NR_futex) && !defined(QEMU_FIBERS)
 _syscall6(int,sys_futex,int *,uaddr,int,op,int,val,
           const struct timespec *,timeout,int *,uaddr2,int,val3)
 #endif
@@ -6500,8 +6500,8 @@ static abi_long do_prctl(CPUArchState *env, abi_long option, abi_long arg2,
 #define NEW_STACK_SIZE 0x40000
 #endif
 
-static pthread_mutex_t clone_lock = PTHREAD_MUTEX_INITIALIZER;
 #ifndef QEMU_FIBERS
+static pthread_mutex_t clone_lock = PTHREAD_MUTEX_INITIALIZER;
 typedef struct {
     CPUArchState *env;
     pthread_mutex_t mutex;
@@ -6524,6 +6524,8 @@ static void *clone_func(void *arg)
     rcu_register_thread();
     tcg_register_thread();
     info->tid = sys_gettid();
+#else
+    info->tid = fibers_syscall_gettid();
 #endif
     env = info->env;
     cpu = env_cpu(env);
@@ -7755,6 +7757,7 @@ static inline abi_long host_to_target_statx(struct target_statx *host_stx,
 }
 #endif
 
+#ifndef QEMU_FIBERS
 static int do_sys_futex(int *uaddr, int op, int val,
                          const struct timespec *timeout, int *uaddr2,
                          int val3)
@@ -7779,7 +7782,7 @@ static int do_sys_futex(int *uaddr, int op, int val,
 #endif /* HOST_LONG_BITS == 64 */
     g_assert_not_reached();
 }
-
+#endif
 #ifndef QEMU_FIBERS
 static int do_safe_futex(int *uaddr, int op, int val,
                          const struct timespec *timeout, int *uaddr2,
@@ -9050,6 +9053,10 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
     //fprintf(stderr, "thread_cpu: %p\n", (void *)thread_cpu);
     switch(num) {
     case TARGET_NR_exit:
+#ifdef QEMU_FIBERS
+    fibers_syscall_exit(NULL); //TODO: check the return value
+    return 0;
+#else
         /* In old applications this may be used to implement _exit(2).
            However in threaded applications it is used for thread termination,
            and _exit_group is used for application termination.
@@ -9082,18 +9089,15 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
 
             thread_cpu = NULL;
             g_free(ts);
-#ifndef QEMU_FIBERS
             rcu_unregister_thread();
             pthread_exit(NULL);
-#else
-            fibers_syscall_exit(NULL); //TODO: check the return value
-#endif
         }
 
         pthread_mutex_unlock(&clone_lock);
         preexit_cleanup(cpu_env, arg1);
         _exit(arg1);
         return 0; /* avoid warning */
+#endif
     case TARGET_NR_read:
         //TODO: in case of QEMU_FIBERS, we don't need to block??
         #ifdef QEMU_FIBERS
