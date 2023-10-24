@@ -20,6 +20,8 @@
 #include "signal-common.h"
 #include "target_mman.h"
 
+#include "fibers.h"
+
 struct syscallname {
     int nr;
     const char *name;
@@ -4158,6 +4160,7 @@ static const struct syscallname scnames[] = {
 
 static int nsyscalls = ARRAY_SIZE(scnames);
 
+extern 
 /*
  * The public interface to this module.
  */
@@ -4176,8 +4179,11 @@ print_syscall(CPUArchState *cpu_env, int num,
     if (!f) {
         return;
     }
+    #ifdef QEMU_FIBERS
+    fprintf(f, "0x%x ", fibers_syscall_gettid());
+    #else
     fprintf(f, "%d ", getpid());
-
+    #endif
     for (i = 0; i < nsyscalls; i++) {
         if (scnames[i].nr == num) {
             if (scnames[i].call != NULL) {
