@@ -65,7 +65,7 @@ void qemu_fibers_init(CPUArchState *env)
     pth_save_thread_cpu_addr((uintptr_t *)&thread_cpu);
 
     new->env = env;
-    new->fibers_tid = 0;
+    new->fibers_tid = fibers_count;
     new->thread = pth_init((uintptr_t)env_cpu(env));
     QLIST_INSERT_HEAD(&fiber_list_head, new, entry);
 }
