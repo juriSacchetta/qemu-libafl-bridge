@@ -12823,7 +12823,11 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
         TaskState *ts = cpu->opaque;
         ts->child_tidptr = arg1;
         /* do not call host set_tid_address() syscall, instead return tid() */
+        #ifdef QEMU_FIBERS
+        return fibers_syscall_gettid();
+        #else
         return get_errno(sys_gettid());
+        #endif
     }
 #endif
 
