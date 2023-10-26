@@ -11466,21 +11466,20 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
 #endif
 #if defined(TARGET_NR_nanosleep)
     case TARGET_NR_nanosleep:
-
-    #ifdef QEMU_FIBERS
-
-    #else 
         {
             struct timespec req, rem;
             target_to_host_timespec(&req, arg1);
+            #ifdef QEMU_FIBERS
+            ret = get_errno(fibers_syscall_nanosleep(&req));
+            #else
             ret = get_errno(safe_nanosleep(&req, &rem));
+            #endif
             if (is_error(ret) && arg2) {
                 host_to_target_timespec(arg2, &rem);
             }
         }
         return ret;
     #endif
-#endif
     case TARGET_NR_prctl:
         return do_prctl(cpu_env, arg1, arg2, arg3, arg4, arg5);
         break;
