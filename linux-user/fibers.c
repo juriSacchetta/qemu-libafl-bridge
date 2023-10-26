@@ -99,30 +99,9 @@ static void destroy_futex(fibers_futex *futex) {
     free(futex);
 }
 
-static int fibers_futex_wait(int* uaddr, int val, struct timespec *pts) {
+//TODO: merge this function with fibers_futex_wait_bitset
+static int fibers_futex_wait(int* uaddr, int val, struct timespec *pts, uint32_t mask) {
     fibers_futex *futex = NULL;
-    fprintf(stderr, "qemu_fiber: futex wait 0x%x %d\n", *uaddr, val);
-
-    while(__atomic_load_n(uaddr, __ATOMIC_ACQUIRE) == val) {
-        if(!futex) {
-            futex = create_futex(uaddr, 0);
-        } else if(futex->waiting == false) {
-            destroy_futex(futex);
-            futex = NULL;
-            return 0;
-        }
-        if (pts != NULL) {
-            pth_wait(pth_event(PTH_EVENT_TIME, pts->tv_sec, pts->tv_nsec/1000));
-        }
-        pth_yield(NULL);
-    }
-    return 0;
-}
-
-static int fibers_futex_wait_bitset(int* uaddr, int val, struct timespec *pts, uint32_t mask) {
-    fibers_futex *futex = NULL;
-
-    fprintf(stderr, "qemu_fiber: futex wait_bitset 0x%x %d %x\n", *uaddr, val, mask);
 
     while(__atomic_load_n(uaddr, __ATOMIC_ACQUIRE) == val) {
         if(!futex) {
@@ -133,41 +112,23 @@ static int fibers_futex_wait_bitset(int* uaddr, int val, struct timespec *pts, u
             return 0;
         }
         if (pts != NULL) {
-            pth_wait(pth_event(PTH_EVENT_TIME, pts->tv_sec, pts->tv_nsec/1000));
-            return 0;
+            pth_wait(pth_event(PTH_EVENT_TIME, pth_timeout(pts->tv_sec, pts->tv_nsec/1000)));
+        } else {
+            pth_yield(NULL);
         }
-        pth_yield(NULL);
     }
-    return 0;
+    return -TARGET_EAGAIN;
 }
 
-static int fibers_futex_wake(int* uaddr, int val) {
-
-    fprintf(stderr, "qemu_fiber: futex wake %p %d\n", uaddr, val);
-    
+static int fibers_futex_wake(int* uaddr, int val, uint32_t mask) {
     int count = 0;
     fibers_futex *current;
     QLIST_FOREACH(current, &futex_list, entry) {
+        if((mask != 0) && (current->mask & mask) == 0) continue;
         current->waiting = false;
-        if(count == val) goto exit;
+        if(count == val) break;
         else count++;
     }
-    exit:
-    pth_yield(NULL);
-    return count;
-}
-
-static int fibers_futex_wake_bitset(int* uaddr, int val, uint32_t mask) {
-    fprintf(stderr, "qemu_fiber: futex wake_bitset %p %d %d\n", uaddr, val, mask);
-    int count = 0;
-    fibers_futex *current;
-    QLIST_FOREACH(current, &futex_list, entry) {
-        if((current->mask & mask) == 0) continue;
-        current->waiting = false;
-        if(count == val) goto exit;
-        else count++;
-    }
-    exit: 
     pth_yield(NULL);
     return count;
 }
@@ -203,16 +164,20 @@ static int fibers_futex_wake_bitset(int* uaddr, int val, uint32_t mask) {
 int fibers_do_futex(int *uaddr, int op, int val, const struct timespec *timeout, int *uaddr2, int val3) {
     switch (op) {
         case FUTEX_WAIT:
-            return fibers_futex_wait(uaddr, val, (struct timespec *)timeout);
+            fprintf(stderr, "qemu_fiber: futex wait 0x%p %d\n", uaddr, val);
+            return fibers_futex_wait(uaddr, val, (struct timespec *)timeout, 0);
         case FUTEX_WAIT_BITSET:
-            return fibers_futex_wait_bitset(uaddr, val, (struct timespec *)timeout, val3);
+            fprintf(stderr, "qemu_fiber: futex wait_bitset %p %d %d\n", uaddr, val, val3);
+            return fibers_futex_wait(uaddr, val, (struct timespec *)timeout, val3);
         case FUTEX_WAIT_REQUEUE_PI:
         case FUTEX_LOCK_PI:
         case FUTEX_LOCK_PI2:
         case FUTEX_WAKE:
-            return fibers_futex_wake(uaddr, val);
+            fprintf(stderr, "qemu_fiber: futex wake %p %d\n", uaddr, val);
+            return fibers_futex_wake(uaddr, val, 0);
         case FUTEX_WAKE_BITSET:
-            return fibers_futex_wake_bitset(uaddr, val, val3);
+            fprintf(stderr, "qemu_fiber: futex wake_bitset %p %d %d\n", uaddr, val, val3);
+            return fibers_futex_wake(uaddr, val, val3);
         case FUTEX_TRYLOCK_PI:
         case FUTEX_UNLOCK_PI:
         case FUTEX_FD:
