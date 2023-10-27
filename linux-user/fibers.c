@@ -9,6 +9,17 @@
 #include "pth.h"
 #include "fibers.h"
 
+// Uncomment the line below to enable debug output
+//#define DEBUG
+
+#ifdef DEBUG
+#define DEBUG_PRINT(fmt, ...) \
+    fprintf(stderr, fmt, ##__VA_ARGS__)
+#else
+#define DEBUG_PRINT(fmt, ...) \
+    do { } while (0)
+#endif
+
 void force_sig_env(CPUArchState *env, int sig);
 
 typedef struct qemu_fiber{
@@ -20,10 +31,10 @@ typedef struct qemu_fiber{
 QLIST_HEAD(qemu_fiber_list, qemu_fiber) fiber_list_head;
 
 typedef struct fibers_futex {
-    qemu_fiber *fiber;
+    pth_t pth_thread;
     int *futex_uaddr;
+    pth_cond_t cond;
     uint32_t mask;
-    bool waiting;
     QLIST_ENTRY(fibers_futex) entry;
 } fibers_futex;
 QLIST_HEAD(fiber_futex_list, fibers_futex) futex_list;
@@ -35,9 +46,9 @@ typedef struct qemu_fiber_fd {
 } qemu_fiber_fd;
 
 #define BASE_FIBERS_TID 0x3fffffff
-qemu_fiber *fibers = NULL;
 
 int fibers_count = BASE_FIBERS_TID;
+pth_mutex_t futex_mutex;
 
 static qemu_fiber * search_fiber_by_fibers_tid(int fibers_tid) {
     qemu_fiber *current;
@@ -68,6 +79,7 @@ void qemu_fibers_init(CPUArchState *env)
     new->fibers_tid = fibers_count;
     new->thread = pth_init((uintptr_t)env_cpu(env));
     QLIST_INSERT_HEAD(&fiber_list_head, new, entry);
+    pth_mutex_init(&futex_mutex);
 }
 
 /*
@@ -86,9 +98,9 @@ int register_fiber(pth_t thread, CPUArchState *cpu) {
 static fibers_futex * create_futex(int *uaddr, uint32_t mask) {
     fibers_futex *new = malloc(sizeof(fibers_futex));
     memset(new, 0, sizeof(fibers_futex));
-    new->fiber = search_fiber_by_pth(pth_self());
+    new->pth_thread = pth_self();
     new->futex_uaddr = uaddr;
-    new->waiting = true;
+    pth_cond_init(&new->cond);
     new->mask = mask;
     QLIST_INSERT_HEAD(&futex_list, new, entry);
     return new;
@@ -103,87 +115,82 @@ static void destroy_futex(fibers_futex *futex) {
 static int fibers_futex_wait(int* uaddr, int val, struct timespec *pts, uint32_t mask) {
     fibers_futex *futex = NULL;
 
-    while(__atomic_load_n(uaddr, __ATOMIC_ACQUIRE) == val) {
-        if(!futex) {
-            futex = create_futex(uaddr, mask);
-        } else if(futex->waiting == false) {
-            destroy_futex(futex);
-            futex = NULL;
-            return 0;
-        }
+    if(__atomic_load_n(uaddr, __ATOMIC_ACQUIRE) == val) {
+        pth_mutex_acquire(&futex_mutex, FALSE, NULL);
+
+        futex = create_futex(uaddr, mask);
+        //TODO: controllare come viene usato questo timeout
+        pth_event_t timeout = NULL;
         if (pts != NULL) {
-            pth_wait(pth_event(PTH_EVENT_TIME, pth_timeout(pts->tv_sec, pts->tv_nsec/1000)));
-        } else {
-            pth_yield(NULL);
+            timeout = pth_event(PTH_EVENT_TIME, pth_timeout(pts->tv_sec, pts->tv_nsec/1000));
         }
+        pth_cond_await(&futex->cond, &futex_mutex, timeout);
+        destroy_futex(futex);
+
+        pth_mutex_release(&futex_mutex);
+        return 0;
     }
     return -TARGET_EAGAIN;
 }
 
 static int fibers_futex_wake(int* uaddr, int val, uint32_t mask) {
+    pth_mutex_acquire(&futex_mutex, FALSE, NULL);
     int count = 0;
-    fibers_futex *current;
+    fibers_futex *current = NULL;
     QLIST_FOREACH(current, &futex_list, entry) {
-        if((mask != 0) && (current->mask & mask) == 0) continue;
-        current->waiting = false;
         if(count == val) break;
-        else count++;
+        if((uaddr != current->futex_uaddr) || ((mask != 0) && (current->mask & mask) == 0)) continue;        
+        count++;
+        pth_cond_notify(&current->cond, TRUE);
     }
-    pth_yield(NULL);
+    pth_mutex_release(&futex_mutex);
     return count;
 }
 
-
-// static int fibers_futex_requeue(CPUState *cpu, int base_op, int val, int val3,
-//                     target_ulong uaddr, 
-//                     target_ulong uaddr2, target_ulong timeout) {
-    // uint32_t val2 = (uint32_t)timeout;
-    // int* to_check = (int*)g2h(cpu, uaddr);
-    // int expected = tswap32(val3);
-    // if (base_op == FUTEX_CMP_REQUEUE &&
-    //     __atomic_load_n(to_check, __ATOMIC_ACQUIRE) != expected)
-    //     return -EAGAIN;
-    // int i, j, k;
-    // for (i = 0, j = 0, k = 0; i < fibers_count; ++i) {
-    //     if (fibers[i].is_zombie) continue;
-    //     if (fibers[i].waiting_futex && fibers[i].futex_addr == uaddr) {
-    //         if (j < val) {
-    //             ++j;
-    //             fibers[i].waiting_futex = 0;
-    //         } else if (k < val2) {
-    //             ++k;
-    //             fibers[i].futex_addr = uaddr2;
-    //         }
-    //     }
-    // }
-    // if (val) qemu_fibers_switch();
-    //return j+k;
-//     return 0;
-// }
+static int fibers_futex_requeue(int op, int *uaddr, uint32_t val, int *uaddr2, int val3) {
+    fibers_futex *current = NULL;
+    if (op == FUTEX_CMP_REQUEUE &&
+        __atomic_load_n(uaddr, __ATOMIC_ACQUIRE) != val3)
+        return -TARGET_EAGAIN;
+    int count = 0;
+    QLIST_FOREACH(current, &futex_list, entry) {
+        if(uaddr != current->futex_uaddr) continue; //|| ((mask != 0) && (current->mask & mask) == 0)
+        if(count < val) {
+            count++;
+            pth_cond_notify(&current->cond, TRUE);
+        } else {
+            current->futex_uaddr = uaddr2;
+            count++;
+        }
+    }
+    return count;
+}
 
 int fibers_do_futex(int *uaddr, int op, int val, const struct timespec *timeout, int *uaddr2, int val3) {
     switch (op) {
         case FUTEX_WAIT:
-            fprintf(stderr, "qemu_fiber: futex wait 0x%p %d\n", uaddr, val);
+            DEBUG_PRINT("qemu_fiber: futex wait 0x%p %d\n", uaddr, val);
             return fibers_futex_wait(uaddr, val, (struct timespec *)timeout, 0);
         case FUTEX_WAIT_BITSET:
-            fprintf(stderr, "qemu_fiber: futex wait_bitset %p %d %d\n", uaddr, val, val3);
+            DEBUG_PRINT("qemu_fiber: futex wait_bitset %p %d %d\n", uaddr, val, val3);
             return fibers_futex_wait(uaddr, val, (struct timespec *)timeout, val3);
+        case FUTEX_WAKE:
+            DEBUG_PRINT("qemu_fiber: futex wake %p %d\n", uaddr, val);
+            return fibers_futex_wake(uaddr, val, 0);
+        case FUTEX_WAKE_BITSET:
+            DEBUG_PRINT("qemu_fiber: futex wake_bitset %p %d %d\n", uaddr, val, val3);
+            return fibers_futex_wake(uaddr, val, val3);
+        case FUTEX_REQUEUE:
+        case FUTEX_CMP_REQUEUE:
+            DEBUG_PRINT("qemu_fiber: futex FUTEX_CMP_REQUEUE %p %d %p %d\n", uaddr, val, uaddr2, val3);
+            return fibers_futex_requeue(op, uaddr, val, uaddr2, val3);
         case FUTEX_WAIT_REQUEUE_PI:
         case FUTEX_LOCK_PI:
         case FUTEX_LOCK_PI2:
-        case FUTEX_WAKE:
-            fprintf(stderr, "qemu_fiber: futex wake %p %d\n", uaddr, val);
-            return fibers_futex_wake(uaddr, val, 0);
-        case FUTEX_WAKE_BITSET:
-            fprintf(stderr, "qemu_fiber: futex wake_bitset %p %d %d\n", uaddr, val, val3);
-            return fibers_futex_wake(uaddr, val, val3);
         case FUTEX_TRYLOCK_PI:
         case FUTEX_UNLOCK_PI:
         case FUTEX_FD:
-        case FUTEX_CMP_REQUEUE:
         case FUTEX_CMP_REQUEUE_PI:
-        case FUTEX_REQUEUE:
         case FUTEX_WAKE_OP:
             break;
         default:
@@ -208,9 +215,9 @@ int fibers_syscall_tkill(abi_long tid, abi_long sig) {
     force_sig_env(current->env, sig);
     return 0;
 }
-//TODO: check parametes 
+
 int fibers_syscall_tgkill(abi_long arg1, abi_long arg2, abi_long arg3) {
-    if (arg2 > fibers_count) exit(-1); //TODO: Improve this error managing
+    assert(arg2 > BASE_FIBERS_TID);
     qemu_fiber *current = search_fiber_by_fibers_tid(arg2);
     if(current == NULL) return -ESRCH;
     force_sig_env(current->env, arg3);
@@ -225,12 +232,12 @@ int fibers_syscall_gettid(void) {
 }
 
 int fibers_syscall_nanosleep(struct timespec *ts){
-    fprintf(stderr, "qemu_fiber: nanosleep %ld %ld\n", ts->tv_sec, ts->tv_nsec/1000);
+    DEBUG_PRINT("qemu_fiber: nanosleep %ld %ld\n", ts->tv_sec, ts->tv_nsec/1000);
     return pth_nanosleep(ts, NULL); //TODO: Check this NULL
 }
 
 int fibers_syscall_clock_nanosleep(clockid_t clock_id, struct timespec *ts){
-    fprintf(stderr, "qemu_fiber: clock_nanosleep %ld %ld\n", ts->tv_sec, ts->tv_nsec/1000);
+    DEBUG_PRINT("qemu_fiber: clock_nanosleep %ld %ld\n", ts->tv_sec, ts->tv_nsec/1000);
     return pth_nanosleep(ts, NULL); //TODO: Check this NULL
 }
 
