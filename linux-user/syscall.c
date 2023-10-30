@@ -11228,7 +11228,11 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
         {
             struct iovec *vec = lock_iovec(VERIFY_WRITE, arg2, arg3, 0);
             if (vec != NULL) {
+                #ifdef QEMU_FIBERS
+                ret = get_errno(pth_readv(arg1, vec, arg3));
+                #else
                 ret = get_errno(safe_readv(arg1, vec, arg3));
+                #endif
                 unlock_iovec(vec, arg2, arg3, 1);
             } else {
                 ret = -host_to_target_errno(errno);
@@ -11239,7 +11243,11 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
         {
             struct iovec *vec = lock_iovec(VERIFY_READ, arg2, arg3, 1);
             if (vec != NULL) {
-                ret = get_errno(safe_writev(arg1, vec, arg3));
+                #if QEMU_FIBERS
+                    ret = get_errno(pth_writev(arg1, vec, arg3));
+                #else
+                    ret = get_errno(safe_writev(arg1, vec, arg3));
+                #endif
                 unlock_iovec(vec, arg2, arg3, 0);
             } else {
                 ret = -host_to_target_errno(errno);
