@@ -4,6 +4,16 @@
 #define QEMU_FIBERS
 #endif 
 
+// Uncomment the line below to enable debug output
+//#define FIBER_DEBUG
+#ifdef FIBER_DEBUG
+#define DEBUG_PRINT(fmt, ...) \
+    fprintf(stderr, fmt, ##__VA_ARGS__)
+#else
+#define DEBUG_PRINT(fmt, ...) \
+    do { } while (0)
+#endif
+
 typedef struct {
     CPUArchState *env;
     pth_mutex_t mutex;
@@ -19,7 +29,7 @@ void qemu_fibers_init(CPUArchState *env);
 int register_fiber(pth_t thread, CPUArchState *cpu);
 
 //patches for syscalls and futexes
-int fibers_do_futex(int *uaddr, int op, int val, const struct timespec *timeout, int *uaddr2, int val3);
+int fibers_do_futex(int *uaddr, int op, int val, const struct timespec *timeout, target_ulong val2, int *uaddr2, int val3);
 void fibers_syscall_exit(void*);
 int fibers_syscall_tkill(abi_long arg1, abi_long arg2);
 int fibers_syscall_tgkill(abi_long arg1, abi_long arg2, abi_long arg3);

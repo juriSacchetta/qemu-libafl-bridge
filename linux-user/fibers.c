@@ -9,17 +9,6 @@
 #include "pth.h"
 #include "fibers.h"
 
-// Uncomment the line below to enable debug output
-//#define DEBUG
-
-#ifdef DEBUG
-#define DEBUG_PRINT(fmt, ...) \
-    fprintf(stderr, fmt, ##__VA_ARGS__)
-#else
-#define DEBUG_PRINT(fmt, ...) \
-    do { } while (0)
-#endif
-
 void force_sig_env(CPUArchState *env, int sig);
 
 typedef struct qemu_fiber{
@@ -147,26 +136,28 @@ static int fibers_futex_wake(int* uaddr, int val, uint32_t mask) {
     return count;
 }
 
-static int fibers_futex_requeue(int op, int *uaddr, uint32_t val, int *uaddr2, int val3) {
+static int fibers_futex_requeue(int op, int *uaddr, uint32_t val, int *uaddr2, int val2, int val3) {
     fibers_futex *current = NULL;
     if (op == FUTEX_CMP_REQUEUE &&
         __atomic_load_n(uaddr, __ATOMIC_ACQUIRE) != val3)
         return -TARGET_EAGAIN;
-    int count = 0;
+    int count_ops = 0;
+    int count_requeqe = 0;
     QLIST_FOREACH(current, &futex_list, entry) {
         if(uaddr != current->futex_uaddr) continue; //|| ((mask != 0) && (current->mask & mask) == 0)
-        if(count < val) {
-            count++;
+        if(count_ops < val) {
+            count_ops++;
             pth_cond_notify(&current->cond, TRUE);
-        } else {
+        } else if(count_requeqe < val2 ){
             current->futex_uaddr = uaddr2;
-            count++;
+            count_requeqe++;
+            count_ops++;
         }
     }
-    return count;
+    return count_ops;
 }
 
-int fibers_do_futex(int *uaddr, int op, int val, const struct timespec *timeout, int *uaddr2, int val3) {
+int fibers_do_futex(int *uaddr, int op, int val, const struct timespec *timeout, target_ulong val2, int *uaddr2, int val3) {
     switch (op) {
         case FUTEX_WAIT:
             DEBUG_PRINT("qemu_fiber: futex wait 0x%p %d\n", uaddr, val);
@@ -183,7 +174,7 @@ int fibers_do_futex(int *uaddr, int op, int val, const struct timespec *timeout,
         case FUTEX_REQUEUE:
         case FUTEX_CMP_REQUEUE:
             DEBUG_PRINT("qemu_fiber: futex FUTEX_CMP_REQUEUE %p %d %p %d\n", uaddr, val, uaddr2, val3);
-            return fibers_futex_requeue(op, uaddr, val, uaddr2, val3);
+            return fibers_futex_requeue(op, uaddr, val, uaddr2, val2, val3);
         case FUTEX_WAIT_REQUEUE_PI:
         case FUTEX_LOCK_PI:
         case FUTEX_LOCK_PI2:

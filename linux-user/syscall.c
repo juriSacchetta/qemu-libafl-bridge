@@ -672,7 +672,7 @@ safe_syscall5(int, execveat, int, dirfd, const char *, filename,
 safe_syscall6(int, pselect6, int, nfds, fd_set *, readfds, fd_set *, writefds, \
               fd_set *, exceptfds, struct timespec *, timeout, void *, sig)
 #endif
-#if defined(TARGET_NR_ppoll) || defined(TARGET_NR_ppoll_time64)
+#if (defined(TARGET_NR_ppoll) || defined(TARGET_NR_ppoll_time64)) && !defined(QEMU_FIBERS)
 safe_syscall5(int, ppoll, struct pollfd *, ufds, unsigned int, nfds,
               struct timespec *, tsp, const sigset_t *, sigmask,
               size_t, sigsetsize)
@@ -1547,12 +1547,16 @@ static abi_long do_ppoll(abi_long arg1, abi_long arg2, abi_long arg3,
             }
         }
 
+        #ifdef QEMU_FIBERS
+        ret = get_errno(pth_poll(pfd, nfds, timeout_ts->tv_nsec/1000));
+        #else
         ret = get_errno(safe_ppoll(pfd, nfds, timeout_ts,
                                    set, SIGSET_T_SIZE));
 
         if (set) {
             finish_sigsuspend_mask(ret);
         }
+        #endif
         if (!is_error(ret) && arg3) {
             if (time64) {
                 if (host_to_target_timespec64(arg3, timeout_ts)) {
@@ -1576,7 +1580,11 @@ static abi_long do_ppoll(abi_long arg1, abi_long arg2, abi_long arg3,
               /* -ve poll() timeout means "infinite" */
               pts = NULL;
           }
+          #ifdef QEMU_FIBERS
+          ret = get_errno(pth_poll(pfd, nfds, pts->tv_nsec/1000));
+          #else
           ret = get_errno(safe_ppoll(pfd, nfds, pts, NULL, 0));
+          #endif
     }
 
     if (!is_error(ret)) {
@@ -6548,7 +6556,7 @@ static void *clone_func(void *arg)
     // pthread_mutex_lock(&clone_lock);
     // pthread_mutex_unlock(&clone_lock);
 
-    fprintf(stderr, "qemu_fibers: starting 0x%d\n", info->tid);
+    DEBUG_PRINT("qemu_fibers: starting 0x%d\n", info->tid);
 #else
     /* Enable signals.  */
     sigprocmask(SIG_SETMASK, &info->sigmask, NULL);
@@ -7880,7 +7888,7 @@ static int do_futex(CPUState *cpu, bool time64, target_ulong uaddr,
         }
     }
     #ifdef QEMU_FIBERS
-        return fibers_do_futex(g2h(cpu, uaddr), base_op, val, pts, haddr2, val3);
+        return fibers_do_futex(g2h(cpu, uaddr), base_op, val, pts, timeout, haddr2, val3);
     #else
         return do_safe_futex(g2h(cpu, uaddr), op, val, pts, haddr2, val3);
     #endif
@@ -9053,10 +9061,6 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
     //fprintf(stderr, "thread_cpu: %p\n", (void *)thread_cpu);
     switch(num) {
     case TARGET_NR_exit:
-#ifdef QEMU_FIBERS
-    fibers_syscall_exit(NULL); //TODO: check the return value
-    return 0;
-#else
         /* In old applications this may be used to implement _exit(2).
            However in threaded applications it is used for thread termination,
            and _exit_group is used for application termination.
@@ -9066,15 +9070,21 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
             return -QEMU_ERESTARTSYS;
         }
 
-        pthread_mutex_lock(&clone_lock);
+        #ifndef QEMU_FIBERS
+            pthread_mutex_lock(&clone_lock);
+        #endif
 
         if (CPU_NEXT(first_cpu)) {
             TaskState *ts = cpu->opaque;
 
             if (ts->child_tidptr) {
                 put_user_u32(0, ts->child_tidptr);
+                #ifdef QEMU_FIBERS
+                fibers_do_futex(g2h(cpu, ts->child_tidptr), FUTEX_WAKE, INT_MAX, NULL, 0, NULL, 0);
+                #else
                 do_sys_futex(g2h(cpu, ts->child_tidptr),
                              FUTEX_WAKE, INT_MAX, NULL, NULL, 0);
+                #endif
             }
 
             object_unparent(OBJECT(cpu));
@@ -9085,23 +9095,35 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
              * data without the lock held.
              */
 
+            #ifndef QEMU_FIBERS
             pthread_mutex_unlock(&clone_lock);
+            #endif
 
             thread_cpu = NULL;
             g_free(ts);
+            #ifndef QEMU_FIBERS
             rcu_unregister_thread();
             pthread_exit(NULL);
+            #endif
         }
 
+        #ifndef QEMU_FIBERS
         pthread_mutex_unlock(&clone_lock);
+        #endif
+        
         preexit_cleanup(cpu_env, arg1);
+        
+        #ifdef QEMU_FIBERS
+        pth_exit(&arg1);
+        #else
         _exit(arg1);
+        #endif
+
         return 0; /* avoid warning */
-#endif
     case TARGET_NR_read:
         //TODO: in case of QEMU_FIBERS, we don't need to block??
         #ifdef QEMU_FIBERS
-            p = g2h(cpu, arg2);
+        p = g2h(cpu, arg2);
             ret = fibers_read(arg1, p, arg3);
             if (ret >= 0 &&
                 fd_trans_host_to_target_data(arg1)) {
@@ -9112,8 +9134,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
             if (arg2 == 0 && arg3 == 0) {
                 return get_errno(safe_read(arg1, 0, 0));
             } else {
-                if (!(p = lock_user(VERIFY_WRITE, arg2, arg3, 0)))
-                    return -TARGET_EFAULT;
+                if (!(p = lock_user(VERIFY_WRITE, arg2, arg3, 0))) return -TARGET_EFAULT;
                     ret = get_errno(safe_read(arg1, p, arg3));
                 if (ret >= 0 &&
                     fd_trans_host_to_target_data(arg1)) {
@@ -9125,7 +9146,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
         #endif
     case TARGET_NR_write:
         #ifdef QEMU_FIBERS
-            void *p = g2h(cpu, arg2);
+        p = g2h(cpu, arg2);
             if (fd_trans_target_to_host_data(arg1)) {
                 void *copy = g_malloc(arg3);
                 memcpy(copy, p, arg3);
@@ -12774,37 +12795,9 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
         if (target_to_host_timespec64(&ts, arg3)) {
             return -TARGET_EFAULT;
         }
-#ifdef QEMU_FIBERS
-#undef timespeccmp
-#undef timespecsub
-#define	timespeccmp(tsp, usp, cmp)					\
-	(((tsp)->tv_sec == (usp)->tv_sec) ?				\
-	    ((tsp)->tv_nsec cmp (usp)->tv_nsec) :			\
-	    ((tsp)->tv_sec cmp (usp)->tv_sec))
-#define	timespecsub(tsp, usp, vsp)					\
-	do {								\
-		(vsp)->tv_sec = (tsp)->tv_sec - (usp)->tv_sec;		\
-		(vsp)->tv_nsec = (tsp)->tv_nsec - (usp)->tv_nsec;	\
-		if ((vsp)->tv_nsec < 0) {				\
-			(vsp)->tv_sec--;				\
-			(vsp)->tv_nsec += 1000000000L;			\
-		}							\
-	} while (0)
-	    // TODO handle signals
-        struct timespec sleep_start;
-        clockid_t clock_type = arg1;
-        clock_gettime(clock_type, &sleep_start);
-        fprintf(stderr, "qemu_fiber: clock_nanosleep %ld %ld\n", ts.tv_sec, ts.tv_nsec);
-        while (1) {
-            struct timespec now, diff;
-            clock_gettime(clock_type, &now);
-            timespecsub(&now, &sleep_start, &diff);
-            if (timespeccmp(&diff, &ts, >=))
-                break;
-            qemu_fibers_switch();
-        }
-        return 0;
-#endif
+        #ifdef QEMU_FIBERS
+            return fibers_syscall_clock_nanosleep((clockid_t) arg1, &ts);
+        #endif
         ret = get_errno(safe_clock_nanosleep(arg1, arg2,
                                              &ts, arg4 ? &ts : NULL));
 
@@ -13802,7 +13795,9 @@ abi_long do_syscall(CPUArchState *cpu_env, int num, abi_long arg1,
 {
     CPUState *cpu = env_cpu(cpu_env);
     abi_long ret;
-
+    #ifdef QEMU_FIBERS
+    pth_yield(NULL);
+    #endif
 #ifdef DEBUG_ERESTARTSYS
     /* Debug-only code for exercising the syscall-restart code paths
      * in the per-architecture cpu main loops: restart every syscall
