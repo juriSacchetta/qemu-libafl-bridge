@@ -3228,10 +3228,12 @@ static abi_long do_connect(int sockfd, abi_ulong target_addr,
     addr = alloca(addrlen+1);
 
     ret = target_to_host_sockaddr(sockfd, addr, target_addr, addrlen);
-    if (ret)
-        return ret;
-
-    return get_errno(safe_connect(sockfd, addr, addrlen));
+    if (ret) return ret;
+    #ifdef QEMU_FIBERS
+         return get_errno(fibers_syscall_connect(sockfd, addr, addrlen));
+    #else
+        return get_errno(safe_connect(sockfd, addr, addrlen));
+    #endif
 }
 
 /* do_sendrecvmsg_locked() Must return target values and target errnos. */
@@ -3418,6 +3420,7 @@ static abi_long do_accept4(int fd, abi_ulong target_addr,
     socklen_t addrlen, ret_addrlen;
     void *addr;
     abi_long ret;
+    #ifndef QEMU_FIBERS
     int host_flags;
 
     if (flags & ~(TARGET_SOCK_CLOEXEC | TARGET_SOCK_NONBLOCK)) {
@@ -3431,9 +3434,15 @@ static abi_long do_accept4(int fd, abi_ulong target_addr,
     if (flags & TARGET_SOCK_CLOEXEC) {
         host_flags |= SOCK_CLOEXEC;
     }
+    #endif
 
     if (target_addr == 0) {
-        return get_errno(safe_accept4(fd, NULL, NULL, host_flags));
+        #ifdef QEMU_FIBERS
+        //TODO: check if downgrading to accept is ok
+            return get_errno(pth_accept(fd, NULL, NULL));
+        #else
+            return get_errno(safe_accept4(fd, NULL, NULL, host_flags));
+        #endif
     }
 
     /* linux returns EFAULT if addrlen pointer is invalid */
@@ -3451,7 +3460,11 @@ static abi_long do_accept4(int fd, abi_ulong target_addr,
     addr = alloca(addrlen);
 
     ret_addrlen = addrlen;
-    ret = get_errno(safe_accept4(fd, addr, &ret_addrlen, host_flags));
+    #ifdef QEMU_FIBERS
+        ret = get_errno(pth_accept(fd, addr, &ret_addrlen));
+    #else
+        ret = get_errno(safe_accept4(fd, NULL, NULL, host_flags));
+    #endif
     if (!is_error(ret)) {
         host_to_target_sockaddr(target_addr, addr, MIN(addrlen, ret_addrlen));
         if (put_user_u32(ret_addrlen, target_addrlen_addr)) {
@@ -3574,9 +3587,18 @@ static abi_long do_sendto(int fd, abi_ulong msg, size_t len, int flags,
         if (ret) {
             goto fail;
         }
-        ret = get_errno(safe_sendto(fd, host_msg, len, flags, addr, addrlen));
+        #ifdef QEMU_FIBERS
+            ret = get_errno(pth_sendto(fd, host_msg, len, flags,
+                                                  addr, addrlen));
+        #else
+            ret = get_errno(safe_sendto(fd, host_msg, len, flags, addr, addrlen));
+        #endif
     } else {
-        ret = get_errno(safe_sendto(fd, host_msg, len, flags, NULL, 0));
+        #ifdef QEMU_FIBERS
+            ret = get_errno(pth_sendto(fd, host_msg, len, flags, NULL, 0));
+        #else
+            ret = get_errno(safe_sendto(fd, host_msg, len, flags, NULL, 0));
+        #endif
     }
 fail:
     if (copy_msg) {
@@ -3616,12 +3638,22 @@ static abi_long do_recvfrom(int fd, abi_ulong msg, size_t len, int flags,
         }
         addr = alloca(addrlen);
         ret_addrlen = addrlen;
+        #ifdef QEMU_FIBERS
+            ret = get_errno(pth_recvfrom(fd, host_msg, len, flags,
+                                        addr, &ret_addrlen));
+        #else
         ret = get_errno(safe_recvfrom(fd, host_msg, len, flags,
                                       addr, &ret_addrlen));
+        #endif
     } else {
         addr = NULL; /* To keep compiler quiet.  */
         addrlen = 0; /* To keep compiler quiet.  */
-        ret = get_errno(safe_recvfrom(fd, host_msg, len, flags, NULL, 0));
+        #ifdef QEMU_FIBERS
+            ret = get_errno(pth_recvfrom(fd, host_msg, len, flags,
+                                        NULL, 0));
+        #else
+            ret = get_errno(safe_recvfrom(fd, host_msg, len, flags, NULL, 0));
+        #endif
     }
     if (!is_error(ret)) {
         if (fd_trans_host_to_target_data(fd)) {
@@ -6713,10 +6745,6 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         pthread_mutex_unlock(&clone_lock);
 #endif
     } else {
-        #ifdef QEMU_FIBERS
-        fprintf(stderr, "Fork not implemented");
-        exit(-1);
-        #endif
         /* if no CLONE_VM, we consider it is a fork */
         if (flags & CLONE_INVALID_FORK_FLAGS) {
             return -TARGET_EINVAL;
@@ -6743,7 +6771,11 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         }
 
         fork_start();
-        ret = fork();
+        #ifdef QEMU_FIBERS
+            ret = pth_fork();
+        #else
+            ret = fork();
+        #endif
         if (ret == 0) {
             /* Child Process.  */
             cpu_clone_regs_child(env, newsp, flags);
@@ -6763,6 +6795,10 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
                 cpu_set_tls (env, newtls);
             if (flags & CLONE_CHILD_CLEARTID)
                 ts->child_tidptr = child_tidptr;
+
+            #ifdef QEMU_FIBERS
+                fibers_clear_all_thread();
+            #endif
         } else {
             cpu_clone_regs_parent(env, flags);
             if (flags & CLONE_PIDFD) {
@@ -9123,7 +9159,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
     case TARGET_NR_read:
         //TODO: in case of QEMU_FIBERS, we don't need to block??
         #ifdef QEMU_FIBERS
-        p = g2h(cpu, arg2);
+            p = g2h(cpu, arg2);
             ret = fibers_read(arg1, p, arg3);
             if (ret >= 0 &&
                 fd_trans_host_to_target_data(arg1)) {
@@ -9265,7 +9301,12 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
     case TARGET_NR_waitpid:
         {
             int status;
+            #ifdef QEMU_FIBERS
+            ret = get_errno(fibers_syscall_waitpid(arg1, &status, arg3, 0));
+            #else
             ret = get_errno(safe_wait4(arg1, &status, arg3, 0));
+            #endif
+
             if (!is_error(ret) && arg2 && ret
                 && put_user_s32(host_to_target_waitstatus(status), arg2))
                 return -TARGET_EFAULT;

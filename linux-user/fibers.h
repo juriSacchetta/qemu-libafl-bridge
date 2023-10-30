@@ -36,12 +36,14 @@ int fibers_syscall_tgkill(abi_long arg1, abi_long arg2, abi_long arg3);
 int fibers_syscall_gettid(void);
 int fibers_syscall_nanosleep(struct timespec *ts);
 int fibers_syscall_clock_nanosleep(clockid_t clock_id, struct timespec *ts);
+void fibers_clear_all_thread(void);
 
 int fibers_syscall_pread(int fd, void *buf, size_t nbytes, off_t offset);
 int fibers_syscall_pwrite(int fd, const void *buf, size_t nbytes, off_t offset);
 int fibers_syscall_pread64(int fd, void *buf, size_t nbytes, off_t offset);
 int fibers_syscall_pwrite64(int fd, const void *buf, size_t nbytes, off_t offset);
-
+int fibers_syscall_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
+int fibers_syscall_waitpid(pid_t pid, int *status, int options);
 /*##########
 # I/O OPERATIONS
 ###########*/

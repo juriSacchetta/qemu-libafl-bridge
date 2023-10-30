@@ -75,6 +75,20 @@ void qemu_fibers_init(CPUArchState *env)
 Thread Control
 */
 
+void fibers_clear_all_thread(void) {
+    qemu_fiber *current;
+    QLIST_FOREACH(current, &fiber_list_head, entry) {
+        if(current->thread == pth_self()) continue;
+        CPUState *cpu = env_cpu(current->env);
+        TaskState *ts = cpu->opaque;
+
+        object_unparent(OBJECT(cpu));
+        object_unref(OBJECT(cpu));
+
+        g_free(ts);
+    }
+}
+
 int register_fiber(pth_t thread, CPUArchState *cpu) {
     qemu_fiber *new = malloc(sizeof(qemu_fiber));
     memset(new, 0, sizeof(qemu_fiber));
@@ -194,10 +208,6 @@ int fibers_do_futex(int *uaddr, int op, int val, const struct timespec *timeout,
 ## Syscall replacements
 */
 
-void fibers_syscall_exit(void *value) {
-    pth_exit(value);
-}
-
 //TODO: check parametes 
 int fibers_syscall_tkill(abi_long tid, abi_long sig) {
     if (tid > fibers_count) exit(-1); //TODO: Improve this error managing
@@ -244,6 +254,14 @@ int fibers_syscall_pread64(int fd, void *buf, size_t nbytes, off_t offset) {
 }
 int fibers_syscall_pwrite64(int fd, const void *buf, size_t nbytes, off_t offset) {
     return fibers_syscall_pwrite(fd, buf, nbytes, offset);
+}
+
+int fibers_syscall_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
+    return pth_connect(sockfd, addr, addrlen);
+}
+
+int fibers_syscall_waitpid(pid_t pid, int *status, int options) {
+    return pth_waitpid(pid, status, options);
 }
 
 /*##########
