@@ -5,10 +5,10 @@
 #endif 
 
 // Uncomment the line below to enable debug output
-//#define FIBER_DEBUG
+#define FIBER_DEBUG
 #ifdef FIBER_DEBUG
 #define DEBUG_PRINT(fmt, ...) \
-    fprintf(stderr, fmt, ##__VA_ARGS__)
+    do { qemu_log("QEMU_FIBERS: " fmt, ##__VA_ARGS__); } while (0)
 #else
 #define DEBUG_PRINT(fmt, ...) \
     do { } while (0)
@@ -36,7 +36,7 @@ int fibers_syscall_tgkill(abi_long arg1, abi_long arg2, abi_long arg3);
 int fibers_syscall_gettid(void);
 int fibers_syscall_nanosleep(struct timespec *ts);
 int fibers_syscall_clock_nanosleep(clockid_t clock_id, struct timespec *ts);
-void fibers_clear_all_thread(void);
+void fibers_clear_all_threads(void);
 
 int fibers_syscall_pread(int fd, void *buf, size_t nbytes, off_t offset);
 int fibers_syscall_pwrite(int fd, const void *buf, size_t nbytes, off_t offset);

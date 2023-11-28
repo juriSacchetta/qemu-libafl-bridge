@@ -75,17 +75,12 @@ void qemu_fibers_init(CPUArchState *env)
 Thread Control
 */
 
-void fibers_clear_all_thread(void) {
+void fibers_clear_all_threads(void) {
     qemu_fiber *current;
     QLIST_FOREACH(current, &fiber_list_head, entry) {
         if(current->thread == pth_self()) continue;
-        CPUState *cpu = env_cpu(current->env);
-        TaskState *ts = cpu->opaque;
-
-        object_unparent(OBJECT(cpu));
-        object_unref(OBJECT(cpu));
-
-        g_free(ts);
+        QLIST_REMOVE(current, entry);
+        free(current);
     }
 }
 
@@ -174,20 +169,20 @@ static int fibers_futex_requeue(int op, int *uaddr, uint32_t val, int *uaddr2, i
 int fibers_do_futex(int *uaddr, int op, int val, const struct timespec *timeout, target_ulong val2, int *uaddr2, int val3) {
     switch (op) {
         case FUTEX_WAIT:
-            DEBUG_PRINT("qemu_fiber: futex wait 0x%p %d\n", uaddr, val);
+            DEBUG_PRINT("futex wait uaddr: %p val: %d\n", uaddr, val);
             return fibers_futex_wait(uaddr, val, (struct timespec *)timeout, 0);
         case FUTEX_WAIT_BITSET:
-            DEBUG_PRINT("qemu_fiber: futex wait_bitset %p %d %d\n", uaddr, val, val3);
+            DEBUG_PRINT("futex wait_bitset uaddr: %p val: %d val3: %d\n", uaddr, val, val3);
             return fibers_futex_wait(uaddr, val, (struct timespec *)timeout, val3);
         case FUTEX_WAKE:
-            DEBUG_PRINT("qemu_fiber: futex wake %p %d\n", uaddr, val);
+            DEBUG_PRINT("futex wake uaddr: %p val: %d\n", uaddr, val);
             return fibers_futex_wake(uaddr, val, 0);
         case FUTEX_WAKE_BITSET:
-            DEBUG_PRINT("qemu_fiber: futex wake_bitset %p %d %d\n", uaddr, val, val3);
+            DEBUG_PRINT("futex wake_bitset uaddr: %p val: %d val3: %d\n", uaddr, val, val3);
             return fibers_futex_wake(uaddr, val, val3);
         case FUTEX_REQUEUE:
         case FUTEX_CMP_REQUEUE:
-            DEBUG_PRINT("qemu_fiber: futex FUTEX_CMP_REQUEUE %p %d %p %d\n", uaddr, val, uaddr2, val3);
+            DEBUG_PRINT("futex FUTEX_CMP_REQUEUE uaddr: %p val: %d uaddr2: %p val3: %d\n", uaddr, val, uaddr2, val3);
             return fibers_futex_requeue(op, uaddr, val, uaddr2, val2, val3);
         case FUTEX_WAIT_REQUEUE_PI:
         case FUTEX_LOCK_PI:
@@ -233,12 +228,12 @@ int fibers_syscall_gettid(void) {
 }
 
 int fibers_syscall_nanosleep(struct timespec *ts){
-    DEBUG_PRINT("qemu_fiber: nanosleep %ld %ld\n", ts->tv_sec, ts->tv_nsec/1000);
+    DEBUG_PRINT("nanosleep %ld %ld\n", ts->tv_sec, ts->tv_nsec/1000);
     return pth_nanosleep(ts, NULL); //TODO: Check this NULL
 }
 
 int fibers_syscall_clock_nanosleep(clockid_t clock_id, struct timespec *ts){
-    DEBUG_PRINT("qemu_fiber: clock_nanosleep %ld %ld\n", ts->tv_sec, ts->tv_nsec/1000);
+    DEBUG_PRINT("clock_nanosleep %ld %ld\n", ts->tv_sec, ts->tv_nsec/1000);
     return pth_nanosleep(ts, NULL); //TODO: Check this NULL
 }
 

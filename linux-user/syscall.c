@@ -693,19 +693,21 @@ safe_syscall2(int, kill, pid_t, pid, int, sig)
 #ifndef QEMU_FIBERS
 safe_syscall2(int, tkill, int, tid, int, sig)
 safe_syscall3(int, tgkill, int, tgid, int, pid, int, sig)
-#endif
 safe_syscall3(ssize_t, readv, int, fd, const struct iovec *, iov, int, iovcnt)
 safe_syscall3(ssize_t, writev, int, fd, const struct iovec *, iov, int, iovcnt)
+#endif
 safe_syscall5(ssize_t, preadv, int, fd, const struct iovec *, iov, int, iovcnt,
               unsigned long, pos_l, unsigned long, pos_h)
 safe_syscall5(ssize_t, pwritev, int, fd, const struct iovec *, iov, int, iovcnt,
               unsigned long, pos_l, unsigned long, pos_h)
+#ifndef QEMU_FIBERS
 safe_syscall3(int, connect, int, fd, const struct sockaddr *, addr,
               socklen_t, addrlen)
 safe_syscall6(ssize_t, sendto, int, fd, const void *, buf, size_t, len,
               int, flags, const struct sockaddr *, addr, socklen_t, addrlen)
 safe_syscall6(ssize_t, recvfrom, int, fd, void *, buf, size_t, len,
               int, flags, struct sockaddr *, addr, socklen_t *, addrlen)
+#endif
 safe_syscall3(ssize_t, sendmsg, int, fd, const struct msghdr *, msg, int, flags)
 safe_syscall3(ssize_t, recvmsg, int, fd, struct msghdr *, msg, int, flags)
 safe_syscall2(int, flock, int, fd, int, operation)
@@ -713,8 +715,10 @@ safe_syscall2(int, flock, int, fd, int, operation)
 safe_syscall4(int, rt_sigtimedwait, const sigset_t *, these, siginfo_t *, uinfo,
               const struct timespec *, uts, size_t, sigsetsize)
 #endif
+#ifndef QEMU_FIBERS
 safe_syscall4(int, accept4, int, fd, struct sockaddr *, addr, socklen_t *, len,
               int, flags)
+#endif
 #if defined(TARGET_NR_nanosleep) && !defined(QEMU_FIBERS)
 safe_syscall2(int, nanosleep, const struct timespec *, req,
               struct timespec *, rem)
@@ -1551,7 +1555,7 @@ static abi_long do_ppoll(abi_long arg1, abi_long arg2, abi_long arg3,
         ret = get_errno(pth_poll(pfd, nfds, timeout_ts->tv_nsec/1000));
         #else
         ret = get_errno(safe_ppoll(pfd, nfds, timeout_ts,
-                                   set, SIGSET_T_SIZE));
+                                   set, SIGSET_T_SIZE));                             
 
         if (set) {
             finish_sigsuspend_mask(ret);
@@ -6588,7 +6592,7 @@ static void *clone_func(void *arg)
     // pthread_mutex_lock(&clone_lock);
     // pthread_mutex_unlock(&clone_lock);
 
-    DEBUG_PRINT("qemu_fibers: starting 0x%d\n", info->tid);
+    DEBUG_PRINT("starting thread: 0x%d\n", info->tid);
 #else
     /* Enable signals.  */
     sigprocmask(SIG_SETMASK, &info->sigmask, NULL);
@@ -6773,6 +6777,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         fork_start();
         #ifdef QEMU_FIBERS
             ret = pth_fork();
+            DEBUG_PRINT("Do a fork with fibers =  %d\n", ret);
         #else
             ret = fork();
         #endif
@@ -6797,7 +6802,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
                 ts->child_tidptr = child_tidptr;
 
             #ifdef QEMU_FIBERS
-                fibers_clear_all_thread();
+                fibers_clear_all_threads();
             #endif
         } else {
             cpu_clone_regs_parent(env, flags);
@@ -11551,7 +11556,10 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
         return ret;
     #endif
     case TARGET_NR_prctl:
-        return do_prctl(cpu_env, arg1, arg2, arg3, arg4, arg5);
+        #ifdef QEMU_FIBERS
+            return -1;
+        #endif
+            return do_prctl(cpu_env, arg1, arg2, arg3, arg4, arg5);
         break;
 #ifdef TARGET_NR_arch_prctl
     case TARGET_NR_arch_prctl:
@@ -13231,7 +13239,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
     }
 #endif
 #endif /* CONFIG_EVENTFD  */
-#if defined(CONFIG_FALLOCATE) && defined(TARGET_NR_fallocate)
+#if defined(CONFIG_FALLOCATE) && defined(TARGET_NR_fallocate) && !defined(QEMU_FIBERS)
     case TARGET_NR_fallocate:
 #if TARGET_ABI_BITS == 32 && !defined(TARGET_ABI_MIPSN32)
         ret = get_errno(fallocate(arg1, arg2, target_offset64(arg3, arg4),
