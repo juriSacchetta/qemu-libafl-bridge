@@ -1284,6 +1284,7 @@ UNUSED static const struct flags falloc_flags[] = {
 #ifdef FALLOC_FL_UNSHARE_RANGE
     FLAG_GENERIC(FALLOC_FL_UNSHARE_RANGE),
 #endif
+    FLAG_END,
 };
 
 UNUSED static const struct flags termios_iflags[] = {
