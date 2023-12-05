@@ -1552,8 +1552,13 @@ static abi_long do_ppoll(abi_long arg1, abi_long arg2, abi_long arg3,
         }
 
         #ifdef QEMU_FIBERS
-        FIBERS_LOG_DEBUG("poll pfd: %p nfds: %d timeout: %ld\n", pfd, nfds, timeout_ts->tv_nsec/1000);
-        ret = get_errno(pth_poll(pfd, nfds, timeout_ts->tv_nsec/1000));
+        if(timeout_ts != NULL){
+            FIBERS_LOG_DEBUG("poll pfd: %p nfds: %d timeout: %ld\n", pfd, nfds, timeout_ts->tv_nsec/1000);
+            ret = get_errno(pth_poll(pfd, nfds, timeout_ts->tv_nsec/1000));
+        } else {
+            FIBERS_LOG_DEBUG("poll pfd: %p nfds: %d timeout: (nil)\n", pfd, nfds);
+            ret = get_errno(pth_poll(pfd, nfds, -1));
+        }
         #else
         ret = get_errno(safe_ppoll(pfd, nfds, timeout_ts,
                                    set, SIGSET_T_SIZE));                             
