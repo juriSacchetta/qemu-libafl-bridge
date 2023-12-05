@@ -1552,6 +1552,7 @@ static abi_long do_ppoll(abi_long arg1, abi_long arg2, abi_long arg3,
         }
 
         #ifdef QEMU_FIBERS
+        FIBERS_LOG_DEBUG("poll pfd: %p nfds: %d timeout: %ld\n", pfd, nfds, timeout_ts->tv_nsec/1000);
         ret = get_errno(pth_poll(pfd, nfds, timeout_ts->tv_nsec/1000));
         #else
         ret = get_errno(safe_ppoll(pfd, nfds, timeout_ts,
@@ -1585,6 +1586,7 @@ static abi_long do_ppoll(abi_long arg1, abi_long arg2, abi_long arg3,
               pts = NULL;
           }
           #ifdef QEMU_FIBERS
+          FIBERS_LOG_DEBUG("poll pfd: %p nfds: %d timeout: %ld\n", pfd, nfds, pts->tv_nsec/1000);
           ret = get_errno(pth_poll(pfd, nfds, pts->tv_nsec/1000));
           #else
           ret = get_errno(safe_ppoll(pfd, nfds, pts, NULL, 0));
@@ -3234,7 +3236,8 @@ static abi_long do_connect(int sockfd, abi_ulong target_addr,
     ret = target_to_host_sockaddr(sockfd, addr, target_addr, addrlen);
     if (ret) return ret;
     #ifdef QEMU_FIBERS
-         return get_errno(fibers_syscall_connect(sockfd, addr, addrlen));
+        FIBERS_LOG_DEBUG("connect sockfd: %d addr: %p addrlen: %d \n", sockfd, addr, addrlen);
+        return get_errno(fibers_syscall_connect(sockfd, addr, addrlen));
     #else
         return get_errno(safe_connect(sockfd, addr, addrlen));
     #endif
@@ -3443,6 +3446,7 @@ static abi_long do_accept4(int fd, abi_ulong target_addr,
     if (target_addr == 0) {
         #ifdef QEMU_FIBERS
         //TODO: check if downgrading to accept is ok
+            FIBERS_LOG_DEBUG("accept fd: %d\n", fd);
             return get_errno(pth_accept(fd, NULL, NULL));
         #else
             return get_errno(safe_accept4(fd, NULL, NULL, host_flags));
@@ -3465,6 +3469,7 @@ static abi_long do_accept4(int fd, abi_ulong target_addr,
 
     ret_addrlen = addrlen;
     #ifdef QEMU_FIBERS
+        FIBERS_LOG_DEBUG("accept fd: %d\n", fd);
         ret = get_errno(pth_accept(fd, addr, &ret_addrlen));
     #else
         ret = get_errno(safe_accept4(fd, NULL, NULL, host_flags));
@@ -3592,6 +3597,7 @@ static abi_long do_sendto(int fd, abi_ulong msg, size_t len, int flags,
             goto fail;
         }
         #ifdef QEMU_FIBERS
+            FIBERS_LOG_DEBUG("send to fd: %d, host_msg: %p, len: %zu, flags: 0x%x, addr: %p, addrlen: %d\n", fd, host_msg, len, flags, addr, addrlen);
             ret = get_errno(pth_sendto(fd, host_msg, len, flags,
                                                   addr, addrlen));
         #else
@@ -3599,6 +3605,7 @@ static abi_long do_sendto(int fd, abi_ulong msg, size_t len, int flags,
         #endif
     } else {
         #ifdef QEMU_FIBERS
+            FIBERS_LOG_DEBUG("send to fd: %d, host_msg: %p, len: %zu, flags: 0x%x, addr: %p, addrlen: %d\n", fd, host_msg, len, flags, NULL, 0);
             ret = get_errno(pth_sendto(fd, host_msg, len, flags, NULL, 0));
         #else
             ret = get_errno(safe_sendto(fd, host_msg, len, flags, NULL, 0));
@@ -6592,7 +6599,7 @@ static void *clone_func(void *arg)
     // pthread_mutex_lock(&clone_lock);
     // pthread_mutex_unlock(&clone_lock);
 
-    DEBUG_PRINT("starting thread: 0x%d\n", info->tid);
+    FIBERS_LOG_DEBUG("starting thread: 0x%d\n", info->tid);
 #else
     /* Enable signals.  */
     sigprocmask(SIG_SETMASK, &info->sigmask, NULL);
@@ -6777,7 +6784,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         fork_start();
         #ifdef QEMU_FIBERS
             ret = pth_fork();
-            DEBUG_PRINT("Do a fork with fibers =  %d\n", ret);
+            FIBERS_LOG_DEBUG("Do a fork with fibers =  %d\n", ret);
         #else
             ret = fork();
         #endif
