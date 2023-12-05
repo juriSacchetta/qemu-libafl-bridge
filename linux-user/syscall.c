@@ -658,7 +658,7 @@ safe_syscall3(ssize_t, write, int, fd, const void *, buff, size_t, count)
 #endif
 safe_syscall4(int, openat, int, dirfd, const char *, pathname, \
               int, flags, mode_t, mode)
-#if defined(TARGET_NR_wait4) || defined(TARGET_NR_waitpid)
+#if (defined(TARGET_NR_wait4) || defined(TARGET_NR_waitpid)) && !defined(QEMU_FIBERS)
 safe_syscall4(pid_t, wait4, pid_t, pid, int *, status, int, options, \
               struct rusage *, rusage)
 #endif
@@ -10958,10 +10958,15 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
     case TARGET_NR_wait4:
         {
             int status;
+            #ifndef QEMU_FIBERS
             abi_long status_ptr = arg2;
             struct rusage rusage, *rusage_ptr;
             abi_ulong target_rusage = arg4;
             abi_long rusage_err;
+            #endif
+            #ifdef QEMU_FIBERS
+            ret = get_errno(pth_waitpid(arg1, &status, arg3));
+            #else
             if (target_rusage)
                 rusage_ptr = &rusage;
             else
@@ -10980,6 +10985,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
                     }
                 }
             }
+            #endif
         }
         return ret;
 #endif
