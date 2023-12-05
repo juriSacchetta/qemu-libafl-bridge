@@ -205,7 +205,7 @@ int fibers_do_futex(int *uaddr, int op, int val, const struct timespec *timeout,
 
 //TODO: check parametes 
 int fibers_syscall_tkill(abi_long tid, abi_long sig) {
-    if (tid > fibers_count) exit(-1); //TODO: Improve this error managing
+    assert(tid <= fibers_count);
     qemu_fiber *current = search_fiber_by_fibers_tid(tid);
     if (current == NULL) return -ESRCH;
     force_sig_env(current->env, sig);
@@ -223,7 +223,7 @@ int fibers_syscall_tgkill(abi_long arg1, abi_long arg2, abi_long arg3) {
 int fibers_syscall_gettid(void) {
     pth_t me = pth_self();
     qemu_fiber *current = search_fiber_by_pth(me);
-    if (current == NULL) exit(-1); //TODO: Logic error
+    assert(current != NULL);
     return current->fibers_tid;
 }
 
