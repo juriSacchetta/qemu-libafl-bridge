@@ -4181,7 +4181,7 @@ print_syscall(CPUArchState *cpu_env, int num,
         return;
     }
     #ifdef QEMU_FIBERS
-    fprintf(f, "0x%x ", fibers_syscall_gettid());
+    fprintf(f, "tid: 0x%x cpu_ptr: %p ", fibers_syscall_gettid(), env_cpu(cpu_env));
     #else
     fprintf(f, "%d ", getpid());
     #endif
