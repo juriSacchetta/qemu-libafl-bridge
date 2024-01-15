@@ -3453,6 +3453,8 @@ endif
 common_ss.add(pagevary)
 specific_ss.add(files('page-vary.c'))
 
+subdir('fibers')
+
 subdir('backends')
 subdir('disas')
 subdir('migration')
@@ -3472,8 +3474,6 @@ common_user_inc = []
 subdir('common-user')
 subdir('bsd-user')
 subdir('linux-user')
-
-subdir('fibers')
 
 # needed for fuzzing binaries
 subdir('tests/qtest/libqos')

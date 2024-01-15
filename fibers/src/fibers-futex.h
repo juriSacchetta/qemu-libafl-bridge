@@ -1,0 +1,1 @@
+void fibers_futex_init(void);

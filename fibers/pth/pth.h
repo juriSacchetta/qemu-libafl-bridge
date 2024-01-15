@@ -47,7 +47,9 @@
 #include <sys/select.h>
 #include <stdint.h>
 
-    /* fallbacks for essential typedefs */
+#include "qemu/osdep.h"
+
+/* fallbacks for essential typedefs */
 #ifndef _PTHREAD_PRIVATE
 /* typedef int pid_t; */
 /* typedef unsigned int size_t; */
@@ -556,32 +558,32 @@ extern ssize_t        pth_pwrite(int, const void *, size_t, off_t);
 
 END_DECLARATION
 
-    /* soft system call mapping support */
-#if PTH_SYSCALL_SOFT && !defined(_PTH_PRIVATE)
-#define fork          pth_fork
-#define waitpid       pth_waitpid
-#define system        pth_system
-#define nanosleep     pth_nanosleep
-#define usleep        pth_usleep
-#define sleep         pth_sleep
-#define sigprocmask   pth_sigmask
-#define sigwait       pth_sigwait
-#define select        pth_select
-#define pselect       pth_pselect
-#define poll          pth_poll
-#define connect       pth_connect
-#define accept        pth_accept
-#define read          pth_read
-#define write         pth_write
-#define readv         pth_readv
-#define writev        pth_writev
-#define recv          pth_recv
-#define send          pth_send
-#define recvfrom      pth_recvfrom
-#define sendto        pth_sendto
-#define pread         pth_pread
-#define pwrite        pth_pwrite
-#endif
+// TODO    /* soft system call mapping support */
+// #if PTH_SYSCALL_SOFT && !defined(_PTH_PRIVATE)
+// #define fork          pth_fork
+// #define waitpid       pth_waitpid
+// #define system        pth_system
+// #define nanosleep     pth_nanosleep
+// #define usleep        pth_usleep
+// #define sleep         pth_sleep
+// #define sigprocmask   pth_sigmask
+// #define sigwait       pth_sigwait
+// #define select        pth_select
+// #define pselect       pth_pselect
+// #define poll          pth_poll
+// #define connect       pth_connect
+// #define accept        pth_accept
+// #define read          pth_read
+// #define write         pth_write
+// #define readv         pth_readv
+// #define writev        pth_writev
+// #define recv          pth_recv
+// #define send          pth_send
+// #define recvfrom      pth_recvfrom
+// #define sendto        pth_sendto
+// #define pread         pth_pread
+// #define pwrite        pth_pwrite
+// #endif
 
     /* backward compatibility (Pth < 1.5.0) */
 #define pth_event_occurred(ev) \

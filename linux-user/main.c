@@ -947,7 +947,7 @@ int main(int argc, char **argv, char **envp)
     target_argv[target_argc] = NULL;
 
 #ifdef QEMU_FIBERS
-    qemu_fibers_init(env);
+    fibers_init(env);
 #endif 
     ts = g_new0(TaskState, 1);
     init_task_state(ts);

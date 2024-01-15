@@ -6735,7 +6735,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
 #ifdef QEMU_FIBERS
         pth_t thread = pth_spawn(attr, env_cpu(info.env), clone_func, &info);
         //TODO: manage sigs
-        ret = register_fiber(thread, env);
+        ret = fibers_thread_register_new(thread, env);
         free(attr);
         if (ret != -1) {
             /* Wait for the child to initialize.  */
@@ -6814,7 +6814,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
                 ts->child_tidptr = child_tidptr;
 
             #ifdef QEMU_FIBERS
-                fibers_clear_all_threads();
+                fibers_thread_clear_all();
             #endif
         } else {
             cpu_clone_regs_parent(env, flags);
@@ -7941,7 +7941,7 @@ static int do_futex(CPUState *cpu, bool time64, target_ulong uaddr,
         }
     }
     #ifdef QEMU_FIBERS
-        return fibers_do_futex(g2h(cpu, uaddr), base_op, val, pts, timeout, haddr2, val3);
+        return fibers_syscall_futex(g2h(cpu, uaddr), base_op, val, pts, timeout, haddr2, val3);
     #else
         return do_safe_futex(g2h(cpu, uaddr), op, val, pts, haddr2, val3);
     #endif
@@ -9133,7 +9133,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
             if (ts->child_tidptr) {
                 put_user_u32(0, ts->child_tidptr);
                 #ifdef QEMU_FIBERS
-                fibers_do_futex(g2h(cpu, ts->child_tidptr), FUTEX_WAKE, INT_MAX, NULL, 0, NULL, 0);
+                fibers_syscall_futex(g2h(cpu, ts->child_tidptr), FUTEX_WAKE, INT_MAX, NULL, 0, NULL, 0);
                 #else
                 do_sys_futex(g2h(cpu, ts->child_tidptr),
                              FUTEX_WAKE, INT_MAX, NULL, NULL, 0);
@@ -9177,7 +9177,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
         //TODO: in case of QEMU_FIBERS, we don't need to block??
         #ifdef QEMU_FIBERS
             p = g2h(cpu, arg2);
-            ret = fibers_read(arg1, p, arg3);
+            ret = fibers_syscall_read(arg1, p, arg3);
             if (ret >= 0 &&
                 fd_trans_host_to_target_data(arg1)) {
                 ret = fd_trans_host_to_target_data(arg1)(p, ret);
@@ -9205,11 +9205,11 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
                 memcpy(copy, p, arg3);
                 ret = fd_trans_target_to_host_data(arg1)(copy, arg3);
                 if (ret >= 0) {
-                    ret = get_errno(fibers_write(arg1, copy, ret));
+                    ret = get_errno(fibers_syscall_write(arg1, copy, ret));
                 }
                 g_free(copy);
             } else {
-                ret = get_errno(fibers_write(arg1, p, arg3));
+                ret = get_errno(fibers_syscall_write(arg1, p, arg3));
             }
             return ret;
         #else
@@ -11591,15 +11591,16 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
             arg4 = arg5;
             arg5 = arg6;
         }
-
-        return get_errno(fibers_syscall_pread64(arg1, p, arg3, target_offset64(arg4, arg5)));
+        //TODO: Check here, the correct one is pread64
+        return get_errno(fibers_syscall_pread(arg1, p, arg3, target_offset64(arg4, arg5)));
     case TARGET_NR_pwrite64:
         p = g2h(cpu, arg2);
         if (regpairs_aligned(cpu_env, num)) {
             arg4 = arg5;
             arg5 = arg6;
         }
-        return get_errno(fibers_syscall_pwrite64(arg1, p, arg3, target_offset64(arg4, arg5)));
+        //TODO: Check here, the correct one is pwrite64
+        return get_errno(fibers_syscall_pwrite(arg1, p, arg3, target_offset64(arg4, arg5)));
     #else
     case TARGET_NR_pread64:
         if (regpairs_aligned(cpu_env, num)) {

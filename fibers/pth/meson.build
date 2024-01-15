@@ -28,4 +28,4 @@ pth_sources = files(
     'pth_vers.c',
 )
 
-specific_ss.add(pth_sources)
+fibers_ss.add(pth_sources)
