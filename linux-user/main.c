@@ -66,7 +66,7 @@
 #endif
 
 #ifdef QEMU_FIBERS
-#include "fibers.h"
+#include "fibers/fibers.h"
 #endif
 
 

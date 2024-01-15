@@ -51,7 +51,7 @@
 
 /* public API headers */
 #define _PTH_PRIVATE
-#include "include/pth.h"
+#include "pth.h"
 #undef _PTH_PRIVATE
 
 /* autoconf defines and macros */

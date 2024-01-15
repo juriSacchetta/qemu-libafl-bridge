@@ -111,7 +111,7 @@ int pth_syscall_hard = PTH_SYSCALL_HARD;
 
 /* internal data structures */
 #if cpp
-typedef int (*pth_syscall_fct_t)();
+typedef int (*pth_syscall_fct_t)(void);
 typedef struct {
     char             *name;    /* name of system/function call */
     pth_syscall_fct_t addr;    /* address of wrapped system/function call */

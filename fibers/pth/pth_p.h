@@ -46,6 +46,9 @@
 #include <sys/socket.h>
 #include <time.h>
 
+//TODO: check if is correct
+#include "qemu/osdep.h"
+
 /* library version */
 #define _PTH_VERS_C_AS_HEADER_
 #include "pth_vers.c"
@@ -53,7 +56,7 @@
 
 /* public API headers */
 #define _PTH_PRIVATE
-#include "include/pth.h"
+#include "pth.h"
 #undef _PTH_PRIVATE
 
 /* autoconf defines and macros */
@@ -168,7 +171,7 @@ char *_pth_compat_strerror(int);
 #define pth_sc(func) func
 #endif /* PTH_SYSCALL_HARD */
 #line 113 "pth_syscall.c"
-typedef int (*pth_syscall_fct_t)();
+typedef int (*pth_syscall_fct_t)(void);
 typedef struct {
     char             *name;    /* name of system/function call */
     pth_syscall_fct_t addr;    /* address of wrapped system/function call */
@@ -387,7 +390,7 @@ struct pth_cleanup_st {
 
     /* thread control block */
 struct pth_st {
-    uintptr_t     qemu_cpu_ptr;
+    CPUState       *qemu_cpu_ptr;
     /* priority queue handling */
     pth_t          q_next;               /* next thread in pool                         */
     pth_t          q_prev;               /* previous thread in pool                     */
@@ -823,6 +826,6 @@ extern char * pth_asprintf(const char *, ...);
 END_DECLARATION
 
 #include <stdint.h>
-extern uintptr_t *thread_cpu;
+extern __thread CPUState *thread_cpu;
 
 #endif /* _PTH_P_H_ */

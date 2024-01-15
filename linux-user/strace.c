@@ -20,7 +20,7 @@
 #include "signal-common.h"
 #include "target_mman.h"
 
-#include "fibers.h"
+#include "fibers/fibers.h"
 
 struct syscallname {
     int nr;

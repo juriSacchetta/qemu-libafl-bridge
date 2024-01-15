@@ -93,7 +93,7 @@ static void dopr_outch (char *, size_t *, size_t, int);
 
 /* some handy macros */
 #define char_to_int(p) (p - '0')
-#define MAX(p,q) ((p >= q) ? p : q)
+#define PTH_MAX(p,q) ((p >= q) ? p : q)
 #define NUL '\0'
 
 static void
@@ -365,7 +365,7 @@ fmtstr(
     int cnt = 0;
 
     if (value == NULL)
-        value = "<NULL>";
+        value = strdup("<NULL>");
     for (strln = 0; value[strln] != '\0'; strln++)
         ;
     padlen = min - strln;
@@ -434,13 +434,13 @@ fmtint(
     convert[place] = 0;
 
     zpadlen = max - place;
-    spadlen = min - MAX(max, place) - (signvalue ? 1 : 0);
+    spadlen = min - PTH_MAX(max, place) - (signvalue ? 1 : 0);
     if (zpadlen < 0)
         zpadlen = 0;
     if (spadlen < 0)
         spadlen = 0;
     if (flags & DP_F_ZERO) {
-        zpadlen = MAX(zpadlen, spadlen);
+        zpadlen = PTH_MAX(zpadlen, spadlen);
         spadlen = 0;
     }
     if (flags & DP_F_MINUS)

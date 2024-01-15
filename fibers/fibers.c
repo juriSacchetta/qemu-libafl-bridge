@@ -6,7 +6,7 @@
 #include "cpu_loop-common.h"
 #include "qemu/queue.h"
 
-#include "pth.h"
+#include "pth/pth.h"
 #include "fibers.h"
 
 void force_sig_env(CPUArchState *env, int sig);
@@ -56,11 +56,9 @@ void qemu_fibers_init(CPUArchState *env)
     qemu_fiber * new = malloc(sizeof(qemu_fiber));
     memset(new, 0, sizeof(qemu_fiber));
 
-    pth_save_thread_cpu_addr((uintptr_t *)&thread_cpu);
-
     new->env = env;
     new->fibers_tid = fibers_count;
-    new->thread = pth_init((uintptr_t)env_cpu(env));
+    new->thread = pth_init(env_cpu(env));
     QLIST_INSERT_HEAD(&fiber_list_head, new, entry);
     pth_mutex_init(&futex_mutex);
 }
@@ -269,3 +267,4 @@ ssize_t fibers_read(int fd, void *buf, size_t nbytes) {
 ssize_t fibers_write(int fd, const void *buf, size_t nbytes) {
     return pth_write(fd, buf, nbytes);
 }
+

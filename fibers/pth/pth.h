@@ -422,7 +422,7 @@ typedef void *Sfdisc_t;
 
 extern void pth_save_thread_cpu_addr(uintptr_t *addr);
     /* global functions */
-extern pth_t          pth_init(uintptr_t);
+extern pth_t          pth_init(CPUState*);
 extern int            pth_kill(void);
 extern long           pth_ctrl(unsigned long, ...);
 extern long           pth_version(void);
@@ -436,7 +436,7 @@ extern int            pth_attr_get(pth_attr_t, int, ...);
 extern int            pth_attr_destroy(pth_attr_t);
 
     /* thread functions */
-extern pth_t          pth_spawn(pth_attr_t, uintptr_t, void *(*)(void *), void *);
+extern pth_t          pth_spawn(pth_attr_t attr, CPUState *qemu_cpu_ptr, void *(*func)(void *), void *arg);
 extern int            pth_once(pth_once_t *, void (*)(void *), void *);
 extern pth_t          pth_self(void);
 extern int            pth_suspend(pth_t);

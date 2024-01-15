@@ -146,7 +146,7 @@
 #include "cpu_loop-common.h"
 
 #ifdef QEMU_FIBERS
-#include "fibers.h"
+#include "fibers/fibers.h"
 #endif
 
 #ifndef CLONE_IO
@@ -6733,7 +6733,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
 #endif
         cpu->random_seed = qemu_guest_random_seed_thread_part1();
 #ifdef QEMU_FIBERS
-        pth_t thread = pth_spawn(attr, (uintptr_t)env_cpu(info.env), clone_func, &info);
+        pth_t thread = pth_spawn(attr, env_cpu(info.env), clone_func, &info);
         //TODO: manage sigs
         ret = register_fiber(thread, env);
         free(attr);

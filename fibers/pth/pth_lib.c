@@ -56,7 +56,7 @@ static void pth_ex_terminate(ex_t *ex)
 #endif
 
 /* initialize the package */
-pth_t pth_init(uintptr_t qemu_cpu_ptr)
+pth_t pth_init(CPUState *qemu_cpu_ptr)
 {
     pth_attr_t t_attr;
 
@@ -222,7 +222,7 @@ static void pth_spawn_trampoline(void)
     abort();
 }
 
-pth_t pth_spawn(pth_attr_t attr, uintptr_t qemu_cpu_ptr, void *(*func)(void *), void *arg)
+pth_t pth_spawn(pth_attr_t attr, CPUState *qemu_cpu_ptr, void *(*func)(void *), void *arg)
 {
     pth_t t;
     unsigned int stacksize;
@@ -631,8 +631,4 @@ int pth_once(pth_once_t *oncectrl, void (*constructor)(void *), void *arg)
         constructor(arg);
     *oncectrl = TRUE;
     return TRUE;
-}
-
-void pth_save_thread_cpu_addr(uintptr_t *addr) {
-    thread_cpu = addr;
 }

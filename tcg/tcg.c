@@ -38,6 +38,8 @@
 #include "exec/tlb-common.h"
 #include "tcg/tcg-op-common.h"
 
+#include "fibers/fibers-sched.h"
+
 #if UINTPTR_MAX == UINT32_MAX
 # define ELF_CLASS  ELFCLASS32
 #else
@@ -6051,6 +6053,7 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb, uint64_t pc_start)
             tcg_out_label(s, arg_label(op->args[0]));
             break;
         case INDEX_op_call:
+            fibers_call_scheduler();
             tcg_reg_alloc_call(s, op);
             break;
         case INDEX_op_exit_tb:

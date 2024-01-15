@@ -477,7 +477,7 @@ int pth_poll_ev(struct pollfd *pfd, nfds_t nfd, int timeout, pth_event_t ev_extr
     /* argument sanity checks */
     if (pfd == NULL)
         return pth_error(-1, EFAULT);
-    if (nfd < 0 || nfd > FD_SETSIZE)
+    if (nfd > FD_SETSIZE)
         return pth_error(-1, EINVAL);
 
     /* convert timeout number into a timeval structure */

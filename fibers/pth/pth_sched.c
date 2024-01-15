@@ -47,7 +47,6 @@ static sigset_t     pth_sigraised;  /* mask of raised signals                */
 static pth_time_t   pth_loadticknext;
 static pth_time_t   pth_loadtickgap = PTH_TIME(1,0);
 
-uintptr_t *thread_cpu;
 /* initialize the scheduler ingredients */
 intern int pth_scheduler_init(void)
 {
@@ -249,7 +248,7 @@ intern void *pth_scheduler(void *dummy)
 
         /* ** ENTERING THREAD ** - by switching the machine context */
         pth_current->dispatches++;
-        *thread_cpu = (pth_current->qemu_cpu_ptr);
+        thread_cpu = (pth_current->qemu_cpu_ptr);
         pth_mctx_switch(&pth_sched->mctx, &pth_current->mctx);
 
         /* update scheduler times */
