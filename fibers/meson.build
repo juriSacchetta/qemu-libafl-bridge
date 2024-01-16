@@ -5,7 +5,6 @@ subdir('pth')
 fibers_ss.add(
     files(  'fibers.c',
             'fibers-futex.c',
-            'fibers-sched.c',
             'fibers-syscall.c',
             'fibers-thread.c')
 )
