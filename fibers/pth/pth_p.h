@@ -827,5 +827,6 @@ END_DECLARATION
 
 #include <stdint.h>
 extern __thread CPUState *thread_cpu;
+extern __thread CPUState *current_cpu;
 
 #endif /* _PTH_P_H_ */

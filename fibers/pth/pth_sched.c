@@ -249,6 +249,7 @@ intern void *pth_scheduler(void *dummy)
         /* ** ENTERING THREAD ** - by switching the machine context */
         pth_current->dispatches++;
         thread_cpu = (pth_current->qemu_cpu_ptr);
+        current_cpu = (pth_current->qemu_cpu_ptr);
         pth_mctx_switch(&pth_sched->mctx, &pth_current->mctx);
 
         /* update scheduler times */
