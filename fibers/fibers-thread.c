@@ -8,10 +8,10 @@ int fibers_count = BASE_FIBERS_TID;
 
 void fibers_thread_init(CPUArchState *cpu) {
     QLIST_INIT(&fiber_list_head);
-    fibers_thread_register_new(pth_init(env_cpu(cpu)), cpu);
+    fibers_new_thread(pth_init(env_cpu(cpu)), cpu);
 }
 
-int fibers_thread_register_new(pth_t thread, CPUArchState *cpu) {
+int fibers_new_thread(pth_t thread, CPUArchState *cpu) {
     qemu_fiber *new = malloc(sizeof(qemu_fiber));
     memset(new, 0, sizeof(qemu_fiber));
     new->env = cpu;

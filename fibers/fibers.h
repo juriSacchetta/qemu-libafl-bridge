@@ -6,6 +6,9 @@
 #include "src/fibers-types.h"
 #include "src/fibers-utils.h"
 
+#ifndef QEMU_FIBERS
+#define QEMU_FIBERS 
+#endif
 
 typedef struct {
     CPUArchState *env;
@@ -19,7 +22,7 @@ typedef struct {
 } new_thread_info;
 
 void fibers_init(CPUArchState *env);
-int  fibers_thread_register_new(pth_t thread, CPUArchState *cpu);
+int  fibers_new_thread(pth_t thread, CPUArchState *cpu);
 void fibers_thread_clear_all(void);
 
 void fibers_call_scheduler(void);

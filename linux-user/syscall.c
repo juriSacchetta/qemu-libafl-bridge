@@ -6556,7 +6556,9 @@ static abi_long do_prctl(CPUArchState *env, abi_long option, abi_long arg2,
 #define NEW_STACK_SIZE 0x40000
 #endif
 
-#ifndef QEMU_FIBERS
+#ifdef QEMU_FIBERS
+static pth_mutex_t clone_lock = PTH_MUTEX_INIT;
+#else 
 static pthread_mutex_t clone_lock = PTHREAD_MUTEX_INITIALIZER;
 typedef struct {
     CPUArchState *env;
@@ -6594,15 +6596,15 @@ static void *clone_func(void *arg)
         put_user_u32(info->tid, info->parent_tidptr);
     qemu_guest_random_seed_thread_part2(cpu->random_seed);
 #ifdef QEMU_FIBERS
-    //pth_sigmask(SIG_SETMASK, &info->sigmask, NULL);
+    pth_sigmask(SIG_SETMASK, &info->sigmask, NULL);
     /* Signal to the parent that we're ready.  */
     pth_mutex_acquire(&info->mutex, FALSE, NULL);
     pth_cond_notify(&info->cond, TRUE);
     pth_mutex_release(&info->mutex);
 
-    /*TODO: (Probabilmente serve solo in caso di fork) Wait until the parent has finished initializing the tls state.  */
-    // pthread_mutex_lock(&clone_lock);
-    // pthread_mutex_unlock(&clone_lock);
+    /* Wait until the parent has finished initializing the tls state.  */
+    pth_mutex_acquire(&clone_lock, FALSE, NULL);
+    pth_mutex_release(&clone_lock);
 
     FIBERS_LOG_DEBUG("starting thread: 0x%d\n", info->tid);
 #else
@@ -6634,9 +6636,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
     TaskState *ts;
     CPUState *new_cpu;
     CPUArchState *new_env;
-#ifndef QEMU_FIBERS
     sigset_t sigmask;
-#endif
 
     flags &= ~CLONE_IGNORED_FLAGS;
 
@@ -6661,7 +6661,9 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         ts = g_new0(TaskState, 1);
         init_task_state(ts);
 
-#ifndef QEMU_FIBERS
+#ifdef QEMU_FIBERS
+        pth_mutex_acquire(&clone_lock, FALSE, NULL);
+#else
         /* Grab a mutex so that thread setup appears atomic.  */
         pthread_mutex_lock(&clone_lock);
 
@@ -6718,10 +6720,10 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         pth_attr_init(attr);
         pth_attr_set(attr, PTH_ATTR_STACK_SIZE, NEW_STACK_SIZE);
         pth_attr_set(attr, PTH_ATTR_JOINABLE, TRUE);
-        /*TODO: It is not safe to deliver signals until the child has finished
+        /* It is not safe to deliver signals until the child has finished
            initializing, so temporarily block all signals.  */
-        // sigfillset(&sigmask);
-        // pth_sigmask(SIG_BLOCK, &sigmask, NULL);
+        sigfillset(&sigmask);
+        pth_sigmask(SIG_BLOCK, &sigmask, &info.sigmask);
 #else
         ret = pthread_attr_init(&attr);
         ret = pthread_attr_setstacksize(&attr, NEW_STACK_SIZE);
@@ -6733,16 +6735,20 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
 #endif
         cpu->random_seed = qemu_guest_random_seed_thread_part1();
 #ifdef QEMU_FIBERS
-        pth_t thread = pth_spawn(attr, env_cpu(info.env), clone_func, &info);
-        //TODO: manage sigs
-        ret = fibers_thread_register_new(thread, env);
-        free(attr);
+        ret = fibers_new_thread(pth_spawn(attr, env_cpu(info.env), clone_func, &info), env);
+        pth_sigmask(SIG_SETMASK, &info.sigmask, NULL);
+        pth_attr_destroy(attr);
         if (ret != -1) {
             /* Wait for the child to initialize.  */
             pth_cond_await(&info.cond, &info.mutex, NULL);
         }
 
         pth_mutex_release(&info.mutex);
+        /*TODO
+        free(&info.cond);
+        free(&info.mutex);
+        */
+        pth_mutex_release(&clone_lock);
 #else
         ret = pthread_create(&info.thread, &attr, clone_func, &info);
         /* TODO: Free new CPU state if thread creation failed.  */
@@ -9123,7 +9129,9 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
             return -QEMU_ERESTARTSYS;
         }
 
-        #ifndef QEMU_FIBERS
+        #ifdef QEMU_FIBERS
+            pth_mutex_acquire(&clone_lock, FALSE, NULL);
+        #else
             pthread_mutex_lock(&clone_lock);
         #endif
 
@@ -9148,19 +9156,25 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
              * data without the lock held.
              */
 
-            #ifndef QEMU_FIBERS
+            #ifdef QEMU_FIBERS
+            pth_mutex_release(&clone_lock);
+            #else
             pthread_mutex_unlock(&clone_lock);
             #endif
 
             thread_cpu = NULL;
             g_free(ts);
-            #ifndef QEMU_FIBERS
+            #ifdef QEMU_FIBERS
+            pth_exit(NULL);
+            #else
             rcu_unregister_thread();
             pthread_exit(NULL);
             #endif
         }
 
-        #ifndef QEMU_FIBERS
+        #ifdef QEMU_FIBERS
+        pth_mutex_release(&clone_lock);
+        #else
         pthread_mutex_unlock(&clone_lock);
         #endif
         
@@ -13872,7 +13886,7 @@ abi_long do_syscall(CPUArchState *cpu_env, int num, abi_long arg1,
     CPUState *cpu = env_cpu(cpu_env);
     abi_long ret;
     #ifdef QEMU_FIBERS
-    pth_yield(NULL);
+    fibers_call_scheduler();
     #endif
 #ifdef DEBUG_ERESTARTSYS
     /* Debug-only code for exercising the syscall-restart code paths
