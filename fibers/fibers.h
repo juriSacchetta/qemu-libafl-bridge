@@ -28,7 +28,7 @@ void fibers_thread_clear_all(void);
 
 void fibers_call_scheduler(void);
 
-int fibers_syscall_futex(int *uaddr, int op, int val, const struct timespec *timeout, target_ulong val2, int *uaddr2, int val3);
+int fibers_syscall_futex(int *uaddr, int op, int val, const struct timespec *timeout_ev, uint32_t val2, int *uaddr2, uint32_t val3);
 int fibers_syscall_tkill(abi_long tid, abi_long sig);
 int fibers_syscall_tgkill(abi_long arg1, abi_long arg2, abi_long arg3);
 int fibers_syscall_gettid(void);

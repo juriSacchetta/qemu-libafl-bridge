@@ -45,7 +45,7 @@ static TCGOp *gen_tb_start(DisasContextBase *db, uint32_t cflags)
     TCGv_i32 count = NULL;
     TCGOp *icount_start_insn = NULL;
 
-    gen_helper_call_scheduler();
+    gen_helper_fibers_scheduler();
     
     if ((cflags & CF_USE_ICOUNT) || !(cflags & CF_NOIRQ)) {
         count = tcg_temp_new_i32();

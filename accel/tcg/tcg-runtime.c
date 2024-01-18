@@ -155,7 +155,7 @@ void HELPER(exit_atomic)(CPUArchState *env)
 
 extern void fibers_call_scheduler(void);
 
-void HELPER(call_scheduler)(void)
+void HELPER(fibers_scheduler)(void)
 {
     fibers_call_scheduler();
 }

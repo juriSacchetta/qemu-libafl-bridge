@@ -16,8 +16,8 @@ void fibers_init(CPUArchState *cpu)
 
 void fibers_call_scheduler(void)
 {
-   int current_active_threads = pth_ctrl(PTH_CTRL_GETTHREADS);
-   if (current_active_threads > 1) {
+   int available_threads = pth_ctrl(PTH_CTRL_GETTHREADS_NEW | PTH_CTRL_GETTHREADS_READY | PTH_CTRL_GETTHREADS_SUSPENDED);
+   if (available_threads > 0) {
       int random_number = random() % 2;
       if(random_number < 1) {
          FIBERS_LOG_DEBUG("Calling scheduler num: %d\n", random_number);
