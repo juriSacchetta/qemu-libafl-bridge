@@ -6735,7 +6735,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
 #endif
         cpu->random_seed = qemu_guest_random_seed_thread_part1();
 #ifdef QEMU_FIBERS
-        ret = fibers_new_thread(pth_spawn(attr, env_cpu(info.env), clone_func, &info), env);
+        ret = fibers_register_thread(pth_spawn(attr, env_cpu(info.env), clone_func, &info), env);
         pth_sigmask(SIG_SETMASK, &info.sigmask, NULL);
         pth_attr_destroy(attr);
         if (ret != -1) {
@@ -9165,6 +9165,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
             thread_cpu = NULL;
             g_free(ts);
             #ifdef QEMU_FIBERS
+            fibers_unregister_thread(pth_self());
             pth_exit(NULL);
             #else
             rcu_unregister_thread();
@@ -9181,6 +9182,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
         preexit_cleanup(cpu_env, arg1);
         
         #ifdef QEMU_FIBERS
+        fibers_unregister_thread(pth_self());
         pth_exit(&arg1);
         #else
         _exit(arg1);
