@@ -1,3 +1,4 @@
+#include <sys/prctl.h>
 
 #include "qemu/osdep.h"
 #include "qemu.h"
@@ -64,4 +65,22 @@ ssize_t fibers_syscall_read(int fd, void *buf, size_t nbytes) {
 
 ssize_t fibers_syscall_write(int fd, const void *buf, size_t nbytes) {
     return pth_write(fd, buf, nbytes);
+}
+
+abi_long fibers_syscall_prctl(abi_long option, abi_long arg2, abi_long arg3, abi_long arg4, abi_long arg5) {
+    pth_attr_t  attr;
+    switch (option) {
+        case PR_SET_NAME:
+            attr = pth_attr_of(pth_self());
+            pth_attr_set(attr, PTH_ATTR_NAME, (char *)arg2);
+            return 0;
+        case PR_GET_NAME:
+            attr = pth_attr_of(pth_self());
+            pth_attr_get(attr, PTH_ATTR_NAME, (char *)arg2);
+            FIBERS_LOG_DEBUG("PR_GET_NAME\n");
+            return 0;
+        default:
+            qemu_log("prctl: unknown option %ld\n", option);
+            abort();
+    }
 }

@@ -42,3 +42,4 @@ GEN_SYSCALL_WRAPPER_SIGN(int, connect, int sockfd, const struct sockaddr *addr, 
 GEN_SYSCALL_WRAPPER_SIGN(int, waitpid, pid_t pid, int *status, int options)
 GEN_SYSCALL_WRAPPER_SIGN(ssize_t, read, int fd, void *buf, size_t nbytes)
 GEN_SYSCALL_WRAPPER_SIGN(ssize_t, write, int fd, const void *buf, size_t nbytes)
+abi_long fibers_syscall_prctl(abi_long option, abi_long arg2, abi_long arg3, abi_long arg4, abi_long arg5);

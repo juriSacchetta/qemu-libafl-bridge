@@ -6446,8 +6446,13 @@ static abi_long do_prctl(CPUArchState *env, abi_long option, abi_long arg2,
             if (!name) {
                 return -TARGET_EFAULT;
             }
+#ifdef QEMU_FIBERS
+            ret = get_errno(fibers_syscall_prctl(PR_GET_NAME, (uintptr_t)name,
+                                  arg3, arg4, arg5));
+#else
             ret = get_errno(prctl(PR_GET_NAME, (uintptr_t)name,
                                   arg3, arg4, arg5));
+#endif
             unlock_user(name, arg2, 16);
             return ret;
         }
@@ -6457,8 +6462,13 @@ static abi_long do_prctl(CPUArchState *env, abi_long option, abi_long arg2,
             if (!name) {
                 return -TARGET_EFAULT;
             }
+#ifdef QEMU_FIBERS
+            ret = get_errno(fibers_syscall_prctl(PR_SET_NAME, (uintptr_t)name,
+                                  arg3, arg4, arg5));
+#else
             ret = get_errno(prctl(PR_SET_NAME, (uintptr_t)name,
                                   arg3, arg4, arg5));
+#endif
             unlock_user(name, arg2, 0);
             return ret;
         }
