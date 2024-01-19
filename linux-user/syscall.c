@@ -9116,7 +9116,6 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
     struct statfs stfs;
 #endif
     void *p;
-    //fprintf(stderr, "thread_cpu: %p\n", (void *)thread_cpu);
     switch(num) {
     case TARGET_NR_exit:
         /* In old applications this may be used to implement _exit(2).
@@ -9190,7 +9189,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
         //TODO: in case of QEMU_FIBERS, we don't need to block??
         #ifdef QEMU_FIBERS
             p = g2h(cpu, arg2);
-            ret = fibers_syscall_read(arg1, p, arg3);
+            ret = get_errno(fibers_syscall_read(arg1, p, arg3));
             if (ret >= 0 &&
                 fd_trans_host_to_target_data(arg1)) {
                 ret = fd_trans_host_to_target_data(arg1)(p, ret);
@@ -12862,7 +12861,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
             return -TARGET_EFAULT;
         }
 #ifdef QEMU_FIBERS
-    return fibers_syscall_clock_nanosleep((clockid_t) arg1, &ts);
+    return get_errno(fibers_syscall_clock_nanosleep((clockid_t) arg1, &ts));
 #endif
         ret = get_errno(safe_clock_nanosleep(arg1, arg2,
                                              &ts, arg4 ? &ts : NULL));
@@ -12888,7 +12887,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
             return -TARGET_EFAULT;
         }
         #ifdef QEMU_FIBERS
-            return fibers_syscall_clock_nanosleep((clockid_t) arg1, &ts);
+            return get_errno(fibers_syscall_clock_nanosleep((clockid_t) arg1, &ts));
         #endif
         ret = get_errno(safe_clock_nanosleep(arg1, arg2,
                                              &ts, arg4 ? &ts : NULL));
