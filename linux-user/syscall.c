@@ -6803,6 +6803,9 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
             /* Child Process.  */
             cpu_clone_regs_child(env, newsp, flags);
             fork_end(1);
+            #ifdef QEMU_FIBERS
+                fibers_fork_end(1);
+            #endif
             /* There is a race condition here.  The parent process could
                theoretically read the TID in the child process before the child
                tid is set.  This would require using either ptrace
@@ -6818,10 +6821,6 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
                 cpu_set_tls (env, newtls);
             if (flags & CLONE_CHILD_CLEARTID)
                 ts->child_tidptr = child_tidptr;
-
-            #ifdef QEMU_FIBERS
-                fibers_thread_clear_all();
-            #endif
         } else {
             cpu_clone_regs_parent(env, flags);
             if (flags & CLONE_PIDFD) {

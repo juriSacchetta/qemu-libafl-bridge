@@ -25,3 +25,10 @@ void fibers_call_scheduler(void)
       }
    }
 }
+
+void fibers_fork_end(bool child) {
+   if(child) {
+      fibers_thread_clear_all();
+      fibers_clean_futex();
+   }
+}

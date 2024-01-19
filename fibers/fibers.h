@@ -22,9 +22,10 @@ typedef struct {
 } new_thread_info;
 
 void fibers_init(CPUArchState *env);
+void fibers_fork_end(bool child);
+
 int  fibers_register_thread(pth_t thread, CPUArchState *cpu);
 bool fibers_unregister_thread(pth_t thread);
-void fibers_thread_clear_all(void);
 
 void fibers_call_scheduler(void);
 

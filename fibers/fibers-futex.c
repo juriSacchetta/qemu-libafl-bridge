@@ -33,6 +33,18 @@ void fibers_futex_init(void)
     pth_mutex_init(&futex_mutex);
 }
 
+void fibers_clean_futex(void)
+{
+    pth_mutex_acquire(&futex_mutex, FALSE, NULL);
+    fibers_futex *futex = NULL;
+    QLIST_FOREACH(futex, &futex_list, entry)
+    {
+        free(futex);
+    }
+    QLIST_INIT(&futex_list);
+    pth_mutex_release(&futex_mutex);
+}
+
 static inline bool match_futex(fibers_futex *futex, int *uaddr, uint32_t bitset)
 {
     return futex && futex->uaddr == uaddr && (bitset == FUTEX_BITSET_MATCH_ANY || futex->bitset == bitset);

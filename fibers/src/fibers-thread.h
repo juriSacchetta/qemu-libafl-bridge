@@ -4,5 +4,6 @@
 extern int fibers_count;
 
 void fibers_thread_init(CPUArchState *cpu);
+void fibers_thread_clear_all(void);
 qemu_fiber * fibers_thread_by_pth(pth_t thread);
 qemu_fiber * fibers_thread_by_tid(int fibers_tid);
