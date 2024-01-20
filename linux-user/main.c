@@ -188,10 +188,6 @@ void qemu_cpu_kick(CPUState *cpu)
     cpu_exit(cpu);
 }
 
-#ifdef QEMU_FIBERS
-extern int fibers_count;
-#endif
-
 void task_settid(TaskState *ts)
 {
     if (ts->ts_tid == 0) {
@@ -948,6 +944,7 @@ int main(int argc, char **argv, char **envp)
 #ifdef QEMU_FIBERS
     fibers_init(env);
 #endif 
+
     ts = g_new0(TaskState, 1);
     init_task_state(ts);
     /* build Task State */

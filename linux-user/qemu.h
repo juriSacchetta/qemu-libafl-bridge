@@ -159,9 +159,6 @@ typedef struct TaskState {
 
     /* Start time of task after system boot in clock ticks */
     uint64_t start_boottime;
-#ifdef QEMU_FIBERS
-    int fiber_index;
-#endif
 } TaskState;
 
 abi_long do_brk(abi_ulong new_brk);
