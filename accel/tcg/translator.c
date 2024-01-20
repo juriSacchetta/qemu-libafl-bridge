@@ -45,8 +45,10 @@ static TCGOp *gen_tb_start(DisasContextBase *db, uint32_t cflags)
     TCGv_i32 count = NULL;
     TCGOp *icount_start_insn = NULL;
 
+#ifdef QEMU_FIBERS
     gen_helper_fibers_scheduler();
-    
+#endif
+
     if ((cflags & CF_USE_ICOUNT) || !(cflags & CF_NOIRQ)) {
         count = tcg_temp_new_i32();
         tcg_gen_ld_i32(count, cpu_env,

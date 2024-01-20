@@ -16,7 +16,6 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
-#define QEMU_FIBERS 1
 #include "qemu/osdep.h"
 #include "qemu/help-texts.h"
 #include "qemu/units.h"

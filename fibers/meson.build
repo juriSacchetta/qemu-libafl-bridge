@@ -1,3 +1,7 @@
+if not have_qemu_fibers
+   subdir_done()
+endif
+
 fibers_ss = ss.source_set()
 
 subdir('pth')

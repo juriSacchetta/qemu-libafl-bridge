@@ -16,7 +16,6 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
-#define QEMU_FIBERS 1
 #define _ATFILE_SOURCE
 #include "qemu/osdep.h"
 #include "qemu/cutils.h"
