@@ -53,7 +53,7 @@ static inline bool match_futex(fibers_futex *futex, int *uaddr, uint32_t bitset)
 static int fibers_futex_wait(int *uaddr, int val, struct timespec *pts, uint32_t bitset)
 {
     if (__atomic_load_n(uaddr, __ATOMIC_ACQUIRE) != val)
-        return -TARGET_EAGAIN;
+        return -EAGAIN;
 
     pth_mutex_acquire(&futex_mutex, FALSE, NULL);
 
@@ -104,7 +104,7 @@ static int fibers_futex_requeue(int op, int *uaddr, uint32_t val, int *uaddr2, i
 {
     fibers_futex *current = NULL;
     if (op == FUTEX_CMP_REQUEUE && __atomic_load_n(uaddr, __ATOMIC_ACQUIRE) != val3)
-        return -TARGET_EAGAIN;
+        return -EAGAIN;
     int count_ops = 0;
     int count_requeqe = 0;
     QLIST_FOREACH(current, &futex_list, entry)
@@ -136,7 +136,7 @@ static inline bool valid_timeout(const struct timespec *timeout) {
 int fibers_syscall_futex(int *uaddr, int op, int val, const struct timespec *timeout, uint32_t val2, int *uaddr2, uint32_t val3)
 {
     if(!valid_timeout(timeout)){
-        return -TARGET_EINVAL;
+        return -EINVAL;
     }
     switch (op)
     {
@@ -165,7 +165,7 @@ int fibers_syscall_futex(int *uaddr, int op, int val, const struct timespec *tim
         exit(-1);
         break;
     default:
-        return -TARGET_ENOSYS;
+        return -ENOSYS;
     }
-    return -TARGET_ENOSYS;
+    return -ENOSYS;
 }

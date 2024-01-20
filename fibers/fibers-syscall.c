@@ -52,6 +52,7 @@ int fibers_syscall_pwrite(int fd, const void *buf, size_t nbytes, off_t offset) 
 }
 
 int fibers_syscall_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
+    FIBERS_LOG_DEBUG("connect sockfd: %d addr: %p addrlen: %d \n", sockfd, addr, addrlen);
     return pth_connect(sockfd, addr, addrlen);
 }
 
@@ -63,8 +64,18 @@ ssize_t fibers_syscall_read(int fd, void *buf, size_t nbytes) {
     return pth_read(fd, buf, nbytes);
 }
 
+ssize_t fibers_syscall_readv(int fd, const struct iovec *iov, int iovcnt) {
+    FIBERS_LOG_DEBUG("readv fd: %d iov: %p iovcnt: %d\n", fd, iov, iovcnt);
+    return pth_readv(fd, iov, iovcnt);
+}
+
 ssize_t fibers_syscall_write(int fd, const void *buf, size_t nbytes) {
     return pth_write(fd, buf, nbytes);
+}
+
+ssize_t fibers_syscall_writev(int fd, const struct iovec *iov, int iovcnt) {
+    FIBERS_LOG_DEBUG("writev fd: %d iov: %p iovcnt: %d\n", fd, iov, iovcnt);
+    return pth_writev(fd, iov, iovcnt);
 }
 
 abi_long fibers_syscall_prctl(abi_long option, abi_long arg2, abi_long arg3, abi_long arg4, abi_long arg5) {
@@ -83,4 +94,31 @@ abi_long fibers_syscall_prctl(abi_long option, abi_long arg2, abi_long arg3, abi
             qemu_log("prctl: unknown option %ld\n", option);
             abort();
     }
+}
+
+int fibers_syscall_ppoll(struct pollfd *fds, nfds_t nfds, const struct timespec *timeout_ts, const sigset_t *sigmask) {
+    //TODO: check if is same use pth_poll to emulate ppoll
+    FIBERS_LOG_DEBUG("ppoll pfd: %p nfds: %d timeout: %ld\n", pfd, nfds, timeout_ts->tv_nsec/1000);
+    return pth_poll(fds, nfds, timeout_ts->tv_nsec/1000);
+}
+
+int fibers_syscall_accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen, int flags) {
+    //TODO: check is is safe use pth_accept to emulate accept4
+    FIBERS_LOG_DEBUG("accept4 sockfd: %d addr: %p addrlen: %d flags: %d\n", sockfd, addr, addrlen, flags);
+    return pth_accept(sockfd, addr, addrlen);
+}
+ssize_t fibers_syscall_sendto(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen) {
+    FIBERS_LOG_DEBUG("sendto sockfd: %d buf: %p len: %d flags: %d dest_addr: %p addrlen: %d\n", sockfd, buf, len, flags, dest_addr, addrlen);
+    return pth_sendto(sockfd, buf, len, flags, dest_addr, addrlen);
+}
+
+ssize_t fibers_syscall_recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_addr, socklen_t *addrlen) {
+    FIBERS_LOG_DEBUG("recvfrom sockfd: %d buf: %p len: %d flags: %d src_addr: %p addrlen: %d\n", sockfd, buf, len, flags, src_addr, addrlen);
+    return pth_recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
+}
+
+int fibers_syscall_wait4(pid_t pid, int *status, int options, struct rusage *rusage) {
+    //TODO: check if is same use pth_waitpid to emulate wait4
+    FIBERS_LOG_DEBUG("wait4 pid: %d status: %p options: %d rusage: %p\n", pid, status, options, rusage);
+    return pth_waitpid(pid, status, options);
 }

@@ -7,10 +7,11 @@
 #include "src/fibers-utils.h"
 
 #ifndef QEMU_FIBERS
-#define QEMU_FIBERS 
+#define QEMU_FIBERS
 #endif
 
-typedef struct {
+typedef struct
+{
     CPUArchState *env;
     pth_mutex_t mutex;
     pth_cond_t cond;
@@ -36,10 +37,18 @@ int fibers_syscall_gettid(void);
 int fibers_syscall_nanosleep(struct timespec *ts);
 int fibers_syscall_clock_nanosleep(clockid_t clock_id, struct timespec *ts);
 
+abi_long fibers_syscall_prctl(abi_long option, abi_long arg2, abi_long arg3, abi_long arg4, abi_long arg5);
+
 GEN_SYSCALL_WRAPPER_SIGN(int, pread, int fd, void *buf, size_t nbytes, off_t offset)
 GEN_SYSCALL_WRAPPER_SIGN(int, pwrite, int fd, const void *buf, size_t nbytes, off_t offset)
 GEN_SYSCALL_WRAPPER_SIGN(int, connect, int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 GEN_SYSCALL_WRAPPER_SIGN(int, waitpid, pid_t pid, int *status, int options)
 GEN_SYSCALL_WRAPPER_SIGN(ssize_t, read, int fd, void *buf, size_t nbytes)
+GEN_SYSCALL_WRAPPER_SIGN(ssize_t, readv, int fd, const struct iovec *iov, int iovcnt)
 GEN_SYSCALL_WRAPPER_SIGN(ssize_t, write, int fd, const void *buf, size_t nbytes)
-abi_long fibers_syscall_prctl(abi_long option, abi_long arg2, abi_long arg3, abi_long arg4, abi_long arg5);
+GEN_SYSCALL_WRAPPER_SIGN(ssize_t, writev, int fd, const struct iovec *iov, int iovcnt)
+GEN_SYSCALL_WRAPPER_SIGN(int, ppoll, struct pollfd *fds, nfds_t nfds, const struct timespec *timeout_ts, const sigset_t *sigmask)
+GEN_SYSCALL_WRAPPER_SIGN(int, accept4, int fd, struct sockaddr *addr, socklen_t *len, int flags)
+GEN_SYSCALL_WRAPPER_SIGN(ssize_t, sendto, int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen)
+GEN_SYSCALL_WRAPPER_SIGN(ssize_t, recvfrom, int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_addr, socklen_t *addrlen)
+GEN_SYSCALL_WRAPPER_SIGN(pid_t, wait4, pid_t pid, int *status, int options, struct rusage *rusage)
