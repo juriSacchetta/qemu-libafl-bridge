@@ -651,7 +651,7 @@ static type safe_##name(type1 arg1, type2 arg2, type3 arg3, type4 arg4, \
 { \
     return safe_syscall(__NR_##name, arg1, arg2, arg3, arg4, arg5, arg6); \
 }
-#ifndef QEMU_FIBERS 
+#ifndef QEMU_FIBERS
 safe_syscall3(ssize_t, read, int, fd, void *, buff, size_t, count)
 safe_syscall3(ssize_t, write, int, fd, const void *, buff, size_t, count)
 #endif
@@ -1554,7 +1554,7 @@ static abi_long do_ppoll(abi_long arg1, abi_long arg2, abi_long arg3,
         ret = get_errno(fibers_syscall_ppoll(pfd, nfds, timeout_ts, set));
 #else
         ret = get_errno(safe_ppoll(pfd, nfds, timeout_ts,
-                                   set, SIGSET_T_SIZE));                             
+                                   set, SIGSET_T_SIZE));
 
         if (set) {
             finish_sigsuspend_mask(ret);
@@ -6552,7 +6552,7 @@ static abi_long do_prctl(CPUArchState *env, abi_long option, abi_long arg2,
 
 #ifdef QEMU_FIBERS
 static pth_mutex_t clone_lock = PTH_MUTEX_INIT;
-#else 
+#else
 static pthread_mutex_t clone_lock = PTHREAD_MUTEX_INITIALIZER;
 typedef struct {
     CPUArchState *env;
@@ -9169,9 +9169,9 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
 #else
         pthread_mutex_unlock(&clone_lock);
 #endif
-        
+
         preexit_cleanup(cpu_env, arg1);
-        
+
 #ifdef QEMU_FIBERS
         fibers_unregister_thread(pth_self());
 #endif
@@ -11265,9 +11265,9 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
             struct iovec *vec = lock_iovec(VERIFY_READ, arg2, arg3, 1);
             if (vec != NULL) {
 #if QEMU_FIBERS
-                    ret = get_errno(fibers_syscall_writev(arg1, vec, arg3));
+                ret = get_errno(fibers_syscall_writev(arg1, vec, arg3));
 #else
-                    ret = get_errno(safe_writev(arg1, vec, arg3));
+                ret = get_errno(safe_writev(arg1, vec, arg3));
 #endif
                 unlock_iovec(vec, arg2, arg3, 0);
             } else {
@@ -11564,15 +11564,15 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
             ret = get_errno(fibers_syscall_nanosleep(&req));
 #else
             ret = get_errno(safe_nanosleep(&req, &rem));
-        #endif
+#endif
             if (is_error(ret) && arg2) {
                 host_to_target_timespec(arg2, &rem);
             }
         }
         return ret;
-    #endif
+#endif
     case TARGET_NR_prctl:
-            return do_prctl(cpu_env, arg1, arg2, arg3, arg4, arg5);
+        return do_prctl(cpu_env, arg1, arg2, arg3, arg4, arg5);
         break;
 #ifdef TARGET_NR_arch_prctl
     case TARGET_NR_arch_prctl:
@@ -12889,15 +12889,15 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
 
     case TARGET_NR_tkill:
 #ifdef QEMU_FIBERS
-    return get_errno(fibers_syscall_tkill(arg1, target_to_host_signal(arg2)));
+        return get_errno(fibers_syscall_tkill(arg1, target_to_host_signal(arg2)));
 #else
-    return get_errno(safe_tkill((int)arg1, target_to_host_signal(arg2)));
+        return get_errno(safe_tkill((int)arg1, target_to_host_signal(arg2)));
 #endif
     case TARGET_NR_tgkill:
 #ifdef QEMU_FIBERS
-    return get_errno(fibers_syscall_tgkill((int)arg1, (int)arg2, target_to_host_signal(arg3)));  
+        return get_errno(fibers_syscall_tgkill((int)arg1, (int)arg2, target_to_host_signal(arg3)));
 #else
-    return get_errno(safe_tgkill((int)arg1, (int)arg2, target_to_host_signal(arg3)));
+        return get_errno(safe_tgkill((int)arg1, (int)arg2, target_to_host_signal(arg3)));
 #endif
 
 #ifdef TARGET_NR_set_robust_list

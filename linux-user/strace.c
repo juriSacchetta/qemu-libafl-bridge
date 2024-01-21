@@ -4163,7 +4163,6 @@ static const struct syscallname scnames[] = {
 
 static int nsyscalls = ARRAY_SIZE(scnames);
 
-extern 
 /*
  * The public interface to this module.
  */
