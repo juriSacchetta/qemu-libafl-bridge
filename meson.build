@@ -3233,9 +3233,6 @@ trace_events_subdirs = [
 ]
 if have_linux_user
   trace_events_subdirs += [ 'linux-user' ]
-  # TODO: aggiungere una opzione per abilitare la compilazione di qemu-fibers
-  # pth = subproject('pth')
-  # pth_dep = pth.get_variable('pth_dep')
 endif
 if have_bsd_user
   trace_events_subdirs += [ 'bsd-user' ]
@@ -3803,7 +3800,7 @@ foreach target : target_dirs
 
   lib = static_library('qemu-' + target,
                  sources: arch_srcs + genh,
-                 dependencies: arch_deps,  # TODO: aggiungere una opzione per abilitare la compilazione di qemu-fibers
+                 dependencies: arch_deps,
                  objects: objects,
                  include_directories: target_inc,
                  c_args: c_args,
@@ -3851,7 +3848,7 @@ foreach target : target_dirs
     emulator = executable(exe_name, exe['sources'],
                install: true,
                c_args: c_args,
-               dependencies: arch_deps + deps + exe['dependencies'], # TODO: aggiungere una opzione per abilitare la compilazione di qemu-fibers
+               dependencies: arch_deps + deps + exe['dependencies'],
                objects: lib.extract_all_objects(recursive: true),
                link_depends: [block_syms, qemu_syms] + exe.get('link_depends', []),
                link_args: link_args,
