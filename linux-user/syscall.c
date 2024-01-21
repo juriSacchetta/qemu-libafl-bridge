@@ -11595,7 +11595,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
         }
 #ifdef QEMU_FIBERS
         //TODO: Check here, the correct one is pread64
-        ret = get_errno(fibers_syscall_pread(arg1, p, arg3, target_offset64(arg4, arg5)));
+        ret = get_errno(fibers_syscall_pread64(arg1, p, arg3, target_offset64(arg4, arg5)));
 #else
         ret = get_errno(pread64(arg1, p, arg3, target_offset64(arg4, arg5)));
 #endif
@@ -11616,8 +11616,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
             }
         }
 #ifdef QEMU_FIBERS
-        //TODO: Check here, the correct one is pwrite64
-        ret = get_errno(fibers_syscall_pwrite(arg1, p, arg3, target_offset64(arg4, arg5)));
+        ret = get_errno(fibers_syscall_pwrite64(arg1, p, arg3, target_offset64(arg4, arg5)));
 #else
         ret = get_errno(pwrite64(arg1, p, arg3, target_offset64(arg4, arg5)));
 #endif
@@ -12534,7 +12533,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
 #endif
     case TARGET_NR_gettid:
 #ifdef QEMU_FIBERS
-        return fibers_syscall_gettid();
+        return get_errno(fibers_syscall_gettid());
 #else
         return get_errno(sys_gettid());
 #endif

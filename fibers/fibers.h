@@ -39,8 +39,8 @@ int fibers_syscall_clock_nanosleep(clockid_t clock_id, struct timespec *ts);
 
 abi_long fibers_syscall_prctl(abi_long option, abi_long arg2, abi_long arg3, abi_long arg4, abi_long arg5);
 
-GEN_SYSCALL_WRAPPER_SIGN(int, pread, int fd, void *buf, size_t nbytes, off_t offset)
-GEN_SYSCALL_WRAPPER_SIGN(int, pwrite, int fd, const void *buf, size_t nbytes, off_t offset)
+GEN_SYSCALL_WRAPPER_SIGN(ssize_t, pread64, int fd, void *buf, size_t nbytes, off_t offset)
+GEN_SYSCALL_WRAPPER_SIGN(ssize_t, pwrite64, int fd, const void *buf, size_t nbytes, off_t offset)
 GEN_SYSCALL_WRAPPER_SIGN(int, connect, int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 GEN_SYSCALL_WRAPPER_SIGN(int, waitpid, pid_t pid, int *status, int options)
 GEN_SYSCALL_WRAPPER_SIGN(ssize_t, read, int fd, void *buf, size_t nbytes)

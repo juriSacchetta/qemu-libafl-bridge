@@ -44,11 +44,17 @@ int fibers_syscall_clock_nanosleep(clockid_t clock_id, struct timespec *ts){
     FIBERS_LOG_DEBUG("clock_nanosleep %ld %ld\n", ts->tv_sec, ts->tv_nsec/1000);
     return pth_nanosleep(ts, NULL); //TODO: Check this NULL
 }
-int fibers_syscall_pread(int fd, void *buf, size_t nbytes, off_t offset) {
-    return pth_pread(fd, buf, nbytes, offset);
+
+ssize_t fibers_syscall_pread64(int fd, void *buf, size_t count, off_t offset){
+    //Use pth_pread to emulate pread64 seems to be safe
+    FIBERS_LOG_DEBUG("pread fd: %d buf: %p count: %d offset: %d\n", fd, buf, count, offset);
+    return pth_pread(fd, buf, count, offset);
 }
-int fibers_syscall_pwrite(int fd, const void *buf, size_t nbytes, off_t offset) {
-    return pth_pwrite(fd, buf, nbytes, offset);
+
+ssize_t fibers_syscall_pwrite64(int fd, const void *buf, size_t count, off_t offset) {
+    //Use pth_pwrite to emulate pwrite64 seems to be safe
+    FIBERS_LOG_DEBUG("pwrite fd: %d buf: %p count: %d offset: %d\n", fd, buf, count, offset);
+    return pth_pwrite(fd, buf, count, offset);
 }
 
 int fibers_syscall_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
