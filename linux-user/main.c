@@ -16,7 +16,6 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
-
 #include "qemu/osdep.h"
 #include "qemu/help-texts.h"
 #include "qemu/units.h"
@@ -64,6 +63,11 @@
 #define AT_FLAGS_PRESERVE_ARGV0_BIT 0
 #define AT_FLAGS_PRESERVE_ARGV0 (1 << AT_FLAGS_PRESERVE_ARGV0_BIT)
 #endif
+
+#ifdef QEMU_FIBERS
+#include "fibers/fibers.h"
+#endif
+
 
 char *exec_path;
 char real_exec_path[PATH_MAX];
@@ -187,7 +191,11 @@ void qemu_cpu_kick(CPUState *cpu)
 void task_settid(TaskState *ts)
 {
     if (ts->ts_tid == 0) {
+    #ifdef QEMU_FIBERS
+        ts->ts_tid = fibers_syscall_gettid();
+    #else
         ts->ts_tid = (pid_t)syscall(SYS_gettid);
+    #endif
     }
 }
 
@@ -977,6 +985,10 @@ int main(int argc, char **argv, char **envp)
         target_argv[i] = strdup(argv[optind + i]);
     }
     target_argv[target_argc] = NULL;
+
+#ifdef QEMU_FIBERS
+    fibers_init(env);
+#endif
 
     ts = g_new0(TaskState, 1);
     init_task_state(ts);

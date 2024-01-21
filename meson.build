@@ -69,6 +69,8 @@ foreach target : target_dirs
   have_bsd_user = have_bsd_user or target.endswith('bsd-user')
   have_system = have_system or target.endswith('-softmmu')
 endforeach
+have_qemu_fibers = have_linux_user
+add_project_arguments('-DQEMU_FIBERS', language: 'c')
 have_user = have_linux_user or have_bsd_user
 have_tools = get_option('tools') \
   .disable_auto_if(not have_system) \
@@ -3496,6 +3498,8 @@ if get_option('b_lto')
 endif
 common_ss.add(pagevary)
 specific_ss.add(files('page-vary-target.c'))
+
+subdir('fibers')
 
 subdir('backends')
 subdir('disas')

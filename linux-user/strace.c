@@ -20,6 +20,10 @@
 #include "signal-common.h"
 #include "target_mman.h"
 
+#ifdef QEMU_FIBERS
+#include "fibers/fibers.h"
+#endif
+
 struct syscallname {
     int nr;
     const char *name;
@@ -1282,6 +1286,7 @@ UNUSED static const struct flags falloc_flags[] = {
 #ifdef FALLOC_FL_UNSHARE_RANGE
     FLAG_GENERIC(FALLOC_FL_UNSHARE_RANGE),
 #endif
+    FLAG_END,
 };
 
 UNUSED static const struct flags termios_iflags[] = {
@@ -4176,8 +4181,11 @@ print_syscall(CPUArchState *cpu_env, int num,
     if (!f) {
         return;
     }
+#ifdef QEMU_FIBERS
+    fprintf(f, "tid: 0x%x cpu_ptr: %p ", fibers_syscall_gettid(), env_cpu(cpu_env));
+#else
     fprintf(f, "%d ", getpid());
-
+#endif
     for (i = 0; i < nsyscalls; i++) {
         if (scnames[i].nr == num) {
             if (scnames[i].call != NULL) {

@@ -331,5 +331,8 @@ DEF_HELPER_FLAGS_2(libafl_qemu_handle_breakpoint, TCG_CALL_NO_RWG,
 
 DEF_HELPER_FLAGS_2(libafl_qemu_handle_sync_backdoor, TCG_CALL_NO_RWG,
                     void, env, i64)
+#ifdef QEMU_FIBERS
+DEF_HELPER_0(fibers_scheduler, void)
+#endif
 
 //// --- End LibAFL code ---
