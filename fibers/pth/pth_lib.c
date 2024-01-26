@@ -522,11 +522,12 @@ int pth_yield(pth_t to)
         pth_pqueue_favorite(q, to);
 
     /* switch to scheduler */
-    if (to != NULL)
+    if (to != NULL) {
         pth_debug2("pth_yield: give up control to scheduler "
                    "in favour of thread \"%s\"", to->name);
-    else
+    } else {
         pth_debug1("pth_yield: give up control to scheduler");
+    }
     pth_mctx_switch(&pth_current->mctx, &pth_sched->mctx);
     pth_debug1("pth_yield: got back control from scheduler");
 

@@ -275,6 +275,7 @@ dopr(
                 break;
             case 'E':
                 flags |= DP_F_UP;
+                // fallthrough
             case 'e':
                 if (cflags == DP_C_LDOUBLE)
                     fvalue = va_arg(args, LDOUBLE);
@@ -283,6 +284,7 @@ dopr(
                 break;
             case 'G':
                 flags |= DP_F_UP;
+                // fallthrough
             case 'g':
                 if (cflags == DP_C_LDOUBLE)
                     fvalue = va_arg(args, LDOUBLE);

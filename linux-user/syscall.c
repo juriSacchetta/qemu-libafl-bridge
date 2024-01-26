@@ -6636,7 +6636,7 @@ static void *clone_func(void *arg)
     /* Wait until the parent has finished initializing the tls state.  */
     pthread_mutex_lock(&clone_lock);
     pthread_mutex_unlock(&clone_lock);
-
+#endif
     //// --- Begin LibAFL code ---
 
     libafl_qemu_env = env;

@@ -143,11 +143,13 @@ int fibers_syscall_futex(int *uaddr, int op, int val, const struct timespec *tim
     {
     case FUTEX_WAIT:
         val3 = FUTEX_BITSET_MATCH_ANY;
+        // fallthrough
     case FUTEX_WAIT_BITSET:
         FIBERS_LOG_DEBUG("futex wait_bitset uaddr: %p val: %d val3: %p\n", uaddr, val, val3);
         return fibers_futex_wait(uaddr, val, (struct timespec *)timeout, val3);
     case FUTEX_WAKE:
         val3 = FUTEX_BITSET_MATCH_ANY;
+        // fallthrough
     case FUTEX_WAKE_BITSET:
         return fibers_futex_wake(uaddr, val, val3);
     case FUTEX_REQUEUE:
