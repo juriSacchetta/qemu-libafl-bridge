@@ -36,9 +36,10 @@ void fibers_futex_init(void)
 void fibers_clean_futex(void)
 {
     pth_mutex_acquire(&futex_mutex, FALSE, NULL);
-    fibers_futex *futex = NULL;
-    QLIST_FOREACH(futex, &futex_list, entry)
+    fibers_futex *futex = NULL, *tmp = NULL;
+    QLIST_FOREACH_SAFE(futex, &futex_list, entry, tmp)
     {
+        QLIST_REMOVE(futex, entry);
         free(futex);
     }
     QLIST_INIT(&futex_list);
