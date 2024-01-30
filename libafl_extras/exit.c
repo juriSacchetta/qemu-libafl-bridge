@@ -3,10 +3,14 @@
 #include "sysemu/runstate.h"
 #include "cpu.h"
 
-#ifdef CONFIG_USER_ONLY
+#if defined(CONFIG_USER_ONLY) && !defined(QEMU_FIBERS)
 #define THREAD_MODIFIER __thread
 #else
 #define THREAD_MODIFIER
+#endif
+
+#ifdef QEMU_FIBERS
+#include "fibers/fibers.h"
 #endif
 
 struct libafl_breakpoint* libafl_qemu_breakpoints = NULL;
@@ -80,6 +84,9 @@ static void prepare_qemu_exit(CPUState* cpu, target_ulong next_pc)
 #ifndef CONFIG_USER_ONLY
     qemu_system_debug_request();
     cpu->stopped = true; // TODO check if still needed
+#endif
+#ifdef QEMU_FIBERS
+    fibers_save_exit_reason(cpu_env(cpu));
 #endif
     // in usermode, this may be called from the syscall hook, thus already out of the cpu_exec but still in the cpu_loop
     if (cpu->running) {

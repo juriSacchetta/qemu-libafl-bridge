@@ -438,6 +438,7 @@ extern int            pth_attr_get(pth_attr_t, int, ...);
 extern int            pth_attr_destroy(pth_attr_t);
 
     /* thread functions */
+extern void           pth_register_env(CPUState *qemu_cpu_ptr);
 extern pth_t          pth_spawn(pth_attr_t attr, CPUState *qemu_cpu_ptr, void *(*func)(void *), void *arg);
 extern int            pth_once(pth_once_t *, void (*)(void *), void *);
 extern pth_t          pth_self(void);

@@ -222,6 +222,10 @@ static void pth_spawn_trampoline(void)
     abort();
 }
 
+void pth_register_env(CPUState *qemu_cpu_ptr) {
+    pth_current->qemu_cpu_ptr = qemu_cpu_ptr;
+}
+
 pth_t pth_spawn(pth_attr_t attr, CPUState *qemu_cpu_ptr, void *(*func)(void *), void *arg)
 {
     pth_t t;
@@ -326,12 +330,8 @@ pth_t pth_spawn(pth_attr_t attr, CPUState *qemu_cpu_ptr, void *(*func)(void *), 
         pth_pqueue_insert(&pth_NQ, t->prio, t);
     }
 
+    t->qemu_cpu_ptr = qemu_cpu_ptr;
     pth_debug1("pth_spawn: leave");
-
-        if(qemu_cpu_ptr != 0) {
-            t->qemu_cpu_ptr = qemu_cpu_ptr;
-        }
-
     /* the returned thread id is just the pointer
        to the thread control block... */
     return t;

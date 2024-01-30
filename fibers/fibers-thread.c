@@ -6,19 +6,19 @@
 QLIST_HEAD(qemu_fiber_list, qemu_fiber) fiber_list_head;
 int fibers_count = BASE_FIBERS_TID;
 
-void fibers_thread_init(CPUArchState *cpu) {
+void fibers_thread_init(void) {
     QLIST_INIT(&fiber_list_head);
-    fibers_register_thread(pth_init(env_cpu(cpu)), cpu);
+    fibers_register_thread(pth_init(NULL), NULL);
 }
 
-int fibers_register_thread(pth_t thread, CPUArchState *cpu) {
+qemu_fiber *fibers_register_thread(pth_t thread, CPUArchState *cpu) {
     qemu_fiber *new = malloc(sizeof(qemu_fiber));
     memset(new, 0, sizeof(qemu_fiber));
     new->env = cpu;
     new->thread = thread;
     new->fibers_tid = ++fibers_count;
     QLIST_INSERT_HEAD(&fiber_list_head, new, entry);
-    return new->fibers_tid;
+    return new;
 }
 
 bool fibers_unregister_thread(pth_t thread) {

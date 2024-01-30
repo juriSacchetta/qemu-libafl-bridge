@@ -114,11 +114,9 @@ int libafl_qemu_num_cpus(void)
 
 CPUState* libafl_qemu_current_cpu(void)
 {
-#ifndef CONFIG_USER_ONLY
     if (current_cpu == NULL) {
         return libafl_last_exit_cpu();
     }
-#endif
     return current_cpu;
 }
 

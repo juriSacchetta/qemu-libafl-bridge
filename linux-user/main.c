@@ -689,8 +689,9 @@ static int parse_args(int argc, char **argv)
 
 uint64_t libafl_load_addr(void);
 int libafl_qemu_main(void);
+#ifndef QEMU_FIBERS
 int libafl_qemu_run(void);
-
+#endif
 __thread CPUArchState *libafl_qemu_env;
 
 struct image_info libafl_image_info;
@@ -706,11 +707,13 @@ __attribute__((weak)) int libafl_qemu_main(void)
     return 0;
 }
 
+#if !defined(QEMU_FIBERS)
 int libafl_qemu_run(void)
 {
     cpu_loop(libafl_qemu_env);
     return 1;
 }
+#endif
 
 //// --- End LibAFL code ---
 
@@ -737,6 +740,10 @@ int main(int argc, char **argv, char **envp)
     int execfd;
     unsigned long max_reserved_va;
     bool preserve_argv0;
+
+#ifdef QEMU_FIBERS
+    fibers_init();
+#endif
 
     error_init(argv[0]);
     module_call_init(MODULE_INIT_TRACE);
@@ -985,10 +992,6 @@ int main(int argc, char **argv, char **envp)
         target_argv[i] = strdup(argv[optind + i]);
     }
     target_argv[target_argc] = NULL;
-
-#ifdef QEMU_FIBERS
-    fibers_init(env);
-#endif
 
     ts = g_new0(TaskState, 1);
     init_task_state(ts);

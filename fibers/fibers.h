@@ -22,11 +22,18 @@ typedef struct
     sigset_t sigmask;
 } new_thread_info;
 
-void fibers_init(CPUArchState *env);
+void fibers_init(void);
 void fibers_fork_end(bool child);
-
-int  fibers_register_thread(pth_t thread, CPUArchState *cpu);
+qemu_fiber *fibers_register_thread(pth_t thread, CPUArchState *cpu);
 bool fibers_unregister_thread(pth_t thread);
+
+
+#ifdef AS_LIB
+int libafl_qemu_run(void);
+void fibers_register_env(CPUArchState *env);
+void fibers_save_exit_reason(CPUArchState *cpu);
+#endif
+
 
 void fibers_call_scheduler(void);
 
