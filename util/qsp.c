@@ -785,13 +785,14 @@ void qsp_report(size_t max, enum QSPSortBy sort_by,
     report_destroy(&rep);
 }
 
+#ifndef QEMU_FIBERS
 static void qsp_snapshot_destroy(QSPSnapshot *snap)
 {
     qht_iter(&snap->ht, qsp_ht_delete, NULL);
     qht_destroy(&snap->ht);
     g_free(snap);
 }
-
+#endif
 void qsp_reset(void)
 {
     QSPSnapshot *new = g_new(QSPSnapshot, 1);

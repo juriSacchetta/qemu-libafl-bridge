@@ -72,7 +72,10 @@ intern void pth_debug(const char *file, int line, int argc, const char *fmt, ...
         va_end(ap);
         n = strlen(str);
         str[n++] = '\n';
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-result"
         pth_sc(write)(STDERR_FILENO, str, n);
+#pragma GCC diagnostic pop
     }
     return;
 }

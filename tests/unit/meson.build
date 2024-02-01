@@ -30,11 +30,6 @@ tests = {
   'test-mul64': [],
   # all code tested by test-int128 is inside int128.h
   'test-int128': [],
-  'rcutorture': [],
-  'test-rcu-list': [],
-  'test-rcu-simpleq': [],
-  'test-rcu-tailq': [],
-  'test-rcu-slist': [],
   'test-qdist': [],
   'test-qht': [],
   'test-qtree': [],
@@ -53,6 +48,16 @@ tests = {
   'test-xs-node': [qom],
   'test-virtio-dmabuf': [meson.project_source_root() / 'hw/display/virtio-dmabuf.c'],
 }
+
+if not have_qemu_fibers 
+  test += {
+    'rcutorture': [],
+    'test-rcu-list': [],
+    'test-rcu-simpleq': [],
+    'test-rcu-tailq': [],
+    'test-rcu-slist': [],
+  }
+endif
 
 if have_system or have_tools
   tests += {
