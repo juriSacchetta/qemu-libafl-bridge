@@ -161,12 +161,13 @@ static void __attribute__((__constructor__)) startup(void)
     qemu_mutex_init(&global_mutex);
 }
 
+#ifndef QEMU_FIBERS
 static void rcu_close_file(RCUCloseFILE *r)
 {
     fclose(r->fd);
     g_free(r);
 }
-
+#endif
 /**
  * valid_filename_template:
  *

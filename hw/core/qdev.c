@@ -49,13 +49,13 @@ const VMStateDescription *qdev_get_vmsd(DeviceState *dev)
     DeviceClass *dc = DEVICE_GET_CLASS(dev);
     return dc->vmsd;
 }
-
+#ifndef QEMU_FIBERS
 static void bus_free_bus_child(BusChild *kid)
 {
     object_unref(OBJECT(kid->child));
     g_free(kid);
 }
-
+#endif
 static void bus_remove_child(BusState *bus, DeviceState *child)
 {
     BusChild *kid;

@@ -73,6 +73,23 @@ struct rcu_reader_data {
     NotifierList force_rcu;
 };
 
+struct rcu_head;
+typedef void RCUCBFunc(struct rcu_head *head);
+
+struct rcu_head {
+    struct rcu_head *next;
+    RCUCBFunc *func;
+};
+#ifdef QEMU_FIBERS
+#define call_rcu(head, func, field)
+#define g_free_rcu(obj, field)
+#define rcu_read_lock()
+#define rcu_read_unlock()
+#define WITH_RCU_READ_LOCK_GUARD()
+#define WITH_RCU_READ_LOCK_GUARD_(var)
+#define RCU_READ_LOCK_GUARD()
+#else
+
 QEMU_DECLARE_CO_TLS(struct rcu_reader_data, rcu_reader)
 
 static inline void rcu_read_lock(void)
@@ -132,14 +149,6 @@ void rcu_unregister_thread(void);
 void rcu_enable_atfork(void);
 void rcu_disable_atfork(void);
 
-struct rcu_head;
-typedef void RCUCBFunc(struct rcu_head *head);
-
-struct rcu_head {
-    struct rcu_head *next;
-    RCUCBFunc *func;
-};
-
 void call_rcu1(struct rcu_head *head, RCUCBFunc *func);
 void drain_call_rcu(void);
 
@@ -194,5 +203,7 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(RCUReadAuto, rcu_read_auto_unlock)
  */
 void rcu_add_force_rcu_notifier(Notifier *n);
 void rcu_remove_force_rcu_notifier(Notifier *n);
+
+#endif
 
 #endif /* QEMU_RCU_H */

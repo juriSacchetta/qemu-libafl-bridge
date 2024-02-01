@@ -42,7 +42,9 @@ util_ss.add(files('keyval.c'))
 util_ss.add(files('crc32c.c'))
 util_ss.add(files('uuid.c'))
 util_ss.add(files('getauxval.c'))
+if not have_qemu_fibers
 util_ss.add(files('rcu.c'))
+endif
 if have_membarrier
   util_ss.add(files('sys_membarrier.c'))
 endif
