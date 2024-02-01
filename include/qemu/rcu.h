@@ -81,12 +81,14 @@ struct rcu_head {
     RCUCBFunc *func;
 };
 #ifdef QEMU_FIBERS
+#define rcu_register_thread()
+#define rcu_unregister_thread()
 #define call_rcu(head, func, field)
 #define g_free_rcu(obj, field)
 #define rcu_read_lock()
 #define rcu_read_unlock()
+#define drain_call_rcu()
 #define WITH_RCU_READ_LOCK_GUARD()
-#define WITH_RCU_READ_LOCK_GUARD_(var)
 #define RCU_READ_LOCK_GUARD()
 #else
 
