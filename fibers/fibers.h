@@ -24,13 +24,14 @@ typedef struct
 
 void fibers_init(void);
 void fibers_fork_end(bool child);
-qemu_fiber *fibers_register_thread(pth_t thread, CPUArchState *cpu);
-void fibers_unregister_thread(pth_t thread);
+qemu_fiber *fibers_spawn(pth_attr_t attr, int tid, CPUArchState *cpu, void *(*func)(void *), void *arg);
+void fibers_exit(bool continue_execution);
 
 #ifdef AS_LIB
 int libafl_qemu_run(void);
-void fibers_register_env(CPUArchState *env);
 void fibers_save_stopped_thread(CPUArchState *cpu);
+void fibers_restore_thread(int tid, CPUArchState *s);
+int fibers_get_tid_by_cpu(CPUArchState *cpu);
 #endif
 
 void fibers_call_scheduler(void);

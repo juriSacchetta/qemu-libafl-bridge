@@ -6653,9 +6653,10 @@ static void *clone_func(void *arg)
         cpu_loop(env);
     }
 
+#ifdef QEMU_FIBERS
     //TODO fix this move the registration logic inside pth lib
-    fibers_unregister_thread(pth_self());
-    pth_exit(NULL);
+    fibers_exit(false);
+#endif
     //// --- End LibAFL code ---
 
     // cpu_loop(env);
@@ -6773,7 +6774,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
 #endif
         cpu->random_seed = qemu_guest_random_seed_thread_part1();
 #ifdef QEMU_FIBERS
-        ret = fibers_register_thread(pth_spawn(attr, env_cpu(info.env), clone_func, &info), env)->fibers_tid;
+        ret = fibers_spawn(attr, -1, info.env, clone_func, &info)->fibers_tid;
         pth_sigmask(SIG_SETMASK, &info.sigmask, NULL);
         pth_attr_destroy(attr);
         if (ret != -1) {
@@ -9204,8 +9205,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
             thread_cpu = NULL;
             g_free(ts);
 #ifdef QEMU_FIBERS
-            fibers_unregister_thread(pth_self());
-            pth_exit(NULL);
+            fibers_exit(false);
 #else
             rcu_unregister_thread();
             pthread_exit(NULL);
@@ -9221,7 +9221,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
         preexit_cleanup(cpu_env, arg1);
 
 #ifdef QEMU_FIBERS
-        fibers_unregister_thread(pth_self());
+        fibers_exit(true);
 #endif
         _exit(arg1);
 

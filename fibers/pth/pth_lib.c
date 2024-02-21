@@ -222,10 +222,6 @@ static void pth_spawn_trampoline(void)
     abort();
 }
 
-void pth_register_env(CPUState *qemu_cpu_ptr) {
-    pth_current->qemu_cpu_ptr = qemu_cpu_ptr;
-}
-
 pth_t pth_spawn(pth_attr_t attr, CPUState *qemu_cpu_ptr, void *(*func)(void *), void *arg)
 {
     pth_t t;

@@ -38,11 +38,11 @@ extern __thread CPUArchState *libafl_qemu_env;
 
 extern void cpu_loop(CPUArchState *env);
 
-static void *fibers_cpu_loop(void *arg)
+void *fibers_cpu_loop(void *arg)
 {
-    cpu_loop((CPUArchState *)arg);
-    fibers_unregister_thread(pth_self());
-    pth_exit(NULL);
+    CPUArchState *env = (CPUArchState *)arg;
+    cpu_loop(env);
+    fibers_exit(false);
     return NULL;
 }
 
@@ -61,17 +61,34 @@ int libafl_qemu_run(void)
 {
     if (fiber_stopped != NULL)
     {
+        pth_attr_t attr = PTH_ATTR_DEFAULT;
+        pth_attr_set(attr, PTH_ATTR_JOINABLE, 0);
+        fiber_stopped->thread = pth_spawn(PTH_ATTR_DEFAULT, env_cpu(fiber_stopped->env), fibers_cpu_loop, fiber_stopped->env);
         fiber_stopped->stopped = false;
-        fiber_stopped->thread =
-            pth_spawn(PTH_ATTR_DEFAULT, env_cpu(fiber_stopped->env), fibers_cpu_loop, fiber_stopped->env);
         fiber_stopped = NULL;
     }
     else
     {
-        fibers_register_thread(pth_spawn(PTH_ATTR_DEFAULT, env_cpu(libafl_qemu_env), fibers_cpu_loop, libafl_qemu_env),
-                               libafl_qemu_env);
+        fibers_spawn_cpu_loop(libafl_qemu_env);
     }
     pth_wait(pth_event(PTH_EVENT_FUNC, check_exit_condition, NULL, pth_time(0, 500000)));
+    if(fiber_stopped != NULL)
+    {
+        pth_abort(fiber_stopped->thread);
+    }
     return 0;
+}
+
+int fibers_get_tid_by_cpu(CPUArchState *cpu)
+{
+    qemu_fiber *current;
+    QLIST_FOREACH(current, &fiber_list_head, entry)
+    {
+        if (current->env == cpu)
+        {
+            return current->fibers_tid;
+        }
+    }
+    return -1;
 }
 #endif

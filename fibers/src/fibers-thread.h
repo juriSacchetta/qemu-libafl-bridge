@@ -1,4 +1,5 @@
 #include "fibers-types.h"
+#include "../fibers.h"
 #include "qemu/osdep.h"
 #include "qemu/queue.h"
 
@@ -16,7 +17,6 @@ inline qemu_fiber *fibers_thread_by_pth(pth_t thread)
         if (current->thread == thread)
             return current;
     }
-    abort();
     return NULL;
 }
 
@@ -28,6 +28,14 @@ inline qemu_fiber *fibers_thread_by_tid(int fibers_tid)
         if (current->fibers_tid == fibers_tid)
             return current;
     }
-    abort();
     return NULL;
 }
+
+#ifdef AS_LIB
+void *fibers_cpu_loop(void *arg);
+inline qemu_fiber *fibers_spawn_cpu_loop(CPUArchState *cpu)
+{
+    return fibers_spawn(NULL, -1, cpu, fibers_cpu_loop, cpu);
+}
+
+#endif
