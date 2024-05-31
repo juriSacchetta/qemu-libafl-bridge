@@ -24,7 +24,7 @@ typedef struct
 
 void fibers_init(void);
 void fibers_fork_end(bool child);
-qemu_fiber *fibers_spawn(pth_attr_t attr, int tid, CPUArchState *cpu, void *(*func)(void *), void *arg);
+qemu_fiber *fibers_spawn(int tid, CPUArchState *cpu, void *(*func)(void *), void *arg);
 void fibers_exit(bool continue_execution);
 
 #ifdef AS_LIB

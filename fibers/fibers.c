@@ -61,9 +61,10 @@ int libafl_qemu_run(void)
 {
     if (fiber_stopped != NULL)
     {
-        pth_attr_t attr = PTH_ATTR_DEFAULT;
+        pth_attr_t attr = pth_attr_new();
         pth_attr_set(attr, PTH_ATTR_JOINABLE, 0);
-        fiber_stopped->thread = pth_spawn(PTH_ATTR_DEFAULT, env_cpu(fiber_stopped->env), fibers_cpu_loop, fiber_stopped->env);
+        fiber_stopped->thread = pth_spawn(attr, env_cpu(fiber_stopped->env), fibers_cpu_loop, fiber_stopped->env);
+        pth_attr_destroy(attr);
         fiber_stopped->stopped = false;
         fiber_stopped = NULL;
     }
@@ -76,6 +77,16 @@ int libafl_qemu_run(void)
     {
         pth_abort(fiber_stopped->thread);
     }
+
+    // CPUState *some_cpu;
+    // printf("!!!!!!!!!!CPU!!!!!!!!!!!!!\n");
+    // CPU_FOREACH(some_cpu)
+    // {
+    //     printf("CPU: %p\n", some_cpu);
+    
+    // }
+    // printf("!!!!!!!!!!CPU!!!!!!!!!!!!!\n");
+
     return 0;
 }
 

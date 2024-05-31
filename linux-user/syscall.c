@@ -6686,9 +6686,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
     if (flags & CLONE_VM) {
         TaskState *parent_ts = (TaskState *)cpu->opaque;
         new_thread_info info;
-#ifdef QEMU_FIBERS
-        pth_attr_t attr = pth_attr_new();
-#else
+#ifndef QEMU_FIBERS
         pthread_attr_t attr;
 #endif
 
@@ -6756,9 +6754,6 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
             info.parent_tidptr = parent_tidptr;
         }
 #ifdef QEMU_FIBERS
-        pth_attr_init(attr);
-        pth_attr_set(attr, PTH_ATTR_STACK_SIZE, NEW_STACK_SIZE);
-        pth_attr_set(attr, PTH_ATTR_JOINABLE, TRUE);
         /* It is not safe to deliver signals until the child has finished
            initializing, so temporarily block all signals.  */
         sigfillset(&sigmask);
@@ -6774,9 +6769,8 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
 #endif
         cpu->random_seed = qemu_guest_random_seed_thread_part1();
 #ifdef QEMU_FIBERS
-        ret = fibers_spawn(attr, -1, info.env, clone_func, &info)->fibers_tid;
+        ret = fibers_spawn(-1, info.env, clone_func, &info)->fibers_tid;
         pth_sigmask(SIG_SETMASK, &info.sigmask, NULL);
-        pth_attr_destroy(attr);
         if (ret != -1) {
             /* Wait for the child to initialize.  */
             pth_cond_await(&info.cond, &info.mutex, NULL);
@@ -9187,6 +9181,8 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
                              FUTEX_WAKE, INT_MAX, NULL, NULL, 0);
 #endif
             }
+
+            g_free(cpu->tb_jmp_cache);
 
             object_unparent(OBJECT(cpu));
             object_unref(OBJECT(cpu));

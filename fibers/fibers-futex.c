@@ -172,3 +172,18 @@ int fibers_syscall_futex(int *uaddr, int op, int val, const struct timespec *tim
     }
     return -ENOSYS;
 }
+
+void print_all_futex(void){
+    fibers_futex *current;
+    int count = 0;
+    fprintf(stderr, "!!!!!!!!!!!!Fibers Futex!!!!!!!!!!!!!!\n");
+    QLIST_FOREACH(current, &futex_list, entry)
+    {
+        fprintf(stderr, "Futex   %d\n", count);
+        fprintf(stderr, "Thread  %p\n", current->pth_thread);
+        fprintf(stderr, "uaddr   %p\n", current->uaddr);
+        fprintf(stderr, "bitset  %d\n", current->bitset);
+        count++;
+    }
+    fprintf(stderr, "Count: %d\n", count);
+}

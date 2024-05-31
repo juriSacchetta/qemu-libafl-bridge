@@ -90,16 +90,18 @@ abi_long fibers_syscall_prctl(abi_long option, abi_long arg2, abi_long arg3, abi
         case PR_SET_NAME:
             attr = pth_attr_of(pth_self());
             pth_attr_set(attr, PTH_ATTR_NAME, (char *)arg2);
-            return 0;
+            break;
         case PR_GET_NAME:
             attr = pth_attr_of(pth_self());
             pth_attr_get(attr, PTH_ATTR_NAME, (char *)arg2);
             FIBERS_LOG_DEBUG("PR_GET_NAME\n");
-            return 0;
+            break;
         default:
             qemu_log("prctl: unknown option %ld\n", option);
             abort();
     }
+    pth_attr_destroy(attr);
+    return 0;
 }
 
 int fibers_syscall_ppoll(struct pollfd *fds, nfds_t nfds, const struct timespec *timeout_ts, const sigset_t *sigmask) {
