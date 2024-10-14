@@ -2,7 +2,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/queue.h"
-#include "../pth/pth.h"
+#include <pth.h>
 
 
 typedef struct qemu_fiber{

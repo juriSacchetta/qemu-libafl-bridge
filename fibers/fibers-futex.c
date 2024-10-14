@@ -3,7 +3,7 @@
 #include "qemu/log.h"
 #include "qemu.h"
 
-#include "pth/pth.h"
+#include <pth.h>
 #include "fibers.h"
 #include "src/fibers-futex.h"
 #include "src/fibers-utils.h"

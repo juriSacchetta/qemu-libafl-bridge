@@ -93,7 +93,7 @@ static void dopr_outch (char *, size_t *, size_t, int);
 
 /* some handy macros */
 #define char_to_int(p) (p - '0')
-#define PTH_MAX(p,q) ((p >= q) ? p : q)
+#define MAX(p,q) ((p >= q) ? p : q)
 #define NUL '\0'
 
 static void
@@ -275,7 +275,6 @@ dopr(
                 break;
             case 'E':
                 flags |= DP_F_UP;
-                // fallthrough
             case 'e':
                 if (cflags == DP_C_LDOUBLE)
                     fvalue = va_arg(args, LDOUBLE);
@@ -284,7 +283,6 @@ dopr(
                 break;
             case 'G':
                 flags |= DP_F_UP;
-                // fallthrough
             case 'g':
                 if (cflags == DP_C_LDOUBLE)
                     fvalue = va_arg(args, LDOUBLE);
@@ -367,7 +365,7 @@ fmtstr(
     int cnt = 0;
 
     if (value == NULL)
-        value = strdup("<NULL>");
+        value = "<NULL>";
     for (strln = 0; value[strln] != '\0'; strln++)
         ;
     padlen = min - strln;
@@ -436,13 +434,13 @@ fmtint(
     convert[place] = 0;
 
     zpadlen = max - place;
-    spadlen = min - PTH_MAX(max, place) - (signvalue ? 1 : 0);
+    spadlen = min - MAX(max, place) - (signvalue ? 1 : 0);
     if (zpadlen < 0)
         zpadlen = 0;
     if (spadlen < 0)
         spadlen = 0;
     if (flags & DP_F_ZERO) {
-        zpadlen = PTH_MAX(zpadlen, spadlen);
+        zpadlen = MAX(zpadlen, spadlen);
         spadlen = 0;
     }
     if (flags & DP_F_MINUS)

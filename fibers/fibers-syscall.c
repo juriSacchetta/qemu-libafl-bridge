@@ -4,7 +4,7 @@
 #include "qemu.h"
 #include "user-internals.h"
 
-#include "pth/pth.h"
+#include <pth.h>
 #include "fibers.h"
 #include "src/fibers-types.h"
 #include "src/fibers-thread.h"
