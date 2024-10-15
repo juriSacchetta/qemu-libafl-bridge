@@ -272,7 +272,7 @@ static void vmdk_free_extents(BlockDriverState *bs)
     BDRVVmdkState *s = bs->opaque;
     VmdkExtent *e;
 
-    bdrv_graph_wrlock(NULL);
+    bdrv_graph_wrlock();
     for (i = 0; i < s->num_extents; i++) {
         e = &s->extents[i];
         g_free(e->l1_table);
@@ -351,29 +351,41 @@ vmdk_write_cid(BlockDriverState *bs, uint32_t cid)
     BDRVVmdkState *s = bs->opaque;
     int ret = 0;
 
-    desc = g_malloc0(DESC_SIZE);
-    tmp_desc = g_malloc0(DESC_SIZE);
-    ret = bdrv_co_pread(bs->file, s->desc_offset, DESC_SIZE, desc, 0);
+    size_t desc_buf_size;
+
+    if (s->desc_offset == 0) {
+        desc_buf_size = bdrv_getlength(bs->file->bs);
+        if (desc_buf_size > 16ULL << 20) {
+            error_report("VMDK description file too big");
+            return -EFBIG;
+        }
+    } else {
+        desc_buf_size = DESC_SIZE;
+    }
+
+    desc = g_malloc0(desc_buf_size);
+    tmp_desc = g_malloc0(desc_buf_size);
+    ret = bdrv_co_pread(bs->file, s->desc_offset, desc_buf_size, desc, 0);
     if (ret < 0) {
         goto out;
     }
 
-    desc[DESC_SIZE - 1] = '\0';
+    desc[desc_buf_size - 1] = '\0';
     tmp_str = strstr(desc, "parentCID");
     if (tmp_str == NULL) {
         ret = -EINVAL;
         goto out;
     }
 
-    pstrcpy(tmp_desc, DESC_SIZE, tmp_str);
+    pstrcpy(tmp_desc, desc_buf_size, tmp_str);
     p_name = strstr(desc, "CID");
     if (p_name != NULL) {
         p_name += sizeof("CID");
-        snprintf(p_name, DESC_SIZE - (p_name - desc), "%" PRIx32 "\n", cid);
-        pstrcat(desc, DESC_SIZE, tmp_desc);
+        snprintf(p_name, desc_buf_size - (p_name - desc), "%" PRIx32 "\n", cid);
+        pstrcat(desc, desc_buf_size, tmp_desc);
     }
 
-    ret = bdrv_co_pwrite_sync(bs->file, s->desc_offset, DESC_SIZE, desc, 0);
+    ret = bdrv_co_pwrite_sync(bs->file, s->desc_offset, desc_buf_size, desc, 0);
 
 out:
     g_free(desc);
@@ -1135,6 +1147,7 @@ static int GRAPH_RDLOCK
 vmdk_parse_extents(const char *desc, BlockDriverState *bs, QDict *options,
                    Error **errp)
 {
+    ERRP_GUARD();
     int ret;
     int matches;
     char access[11];
@@ -1235,7 +1248,7 @@ vmdk_parse_extents(const char *desc, BlockDriverState *bs, QDict *options,
                             0, 0, 0, 0, 0, &extent, errp);
             if (ret < 0) {
                 bdrv_graph_rdunlock_main_loop();
-                bdrv_graph_wrlock(NULL);
+                bdrv_graph_wrlock();
                 bdrv_unref_child(bs, extent_file);
                 bdrv_graph_wrunlock();
                 bdrv_graph_rdlock_main_loop();
@@ -1254,7 +1267,7 @@ vmdk_parse_extents(const char *desc, BlockDriverState *bs, QDict *options,
             g_free(buf);
             if (ret) {
                 bdrv_graph_rdunlock_main_loop();
-                bdrv_graph_wrlock(NULL);
+                bdrv_graph_wrlock();
                 bdrv_unref_child(bs, extent_file);
                 bdrv_graph_wrunlock();
                 bdrv_graph_rdlock_main_loop();
@@ -1265,7 +1278,7 @@ vmdk_parse_extents(const char *desc, BlockDriverState *bs, QDict *options,
             ret = vmdk_open_se_sparse(bs, extent_file, bs->open_flags, errp);
             if (ret) {
                 bdrv_graph_rdunlock_main_loop();
-                bdrv_graph_wrlock(NULL);
+                bdrv_graph_wrlock();
                 bdrv_unref_child(bs, extent_file);
                 bdrv_graph_wrunlock();
                 bdrv_graph_rdlock_main_loop();
@@ -1275,7 +1288,7 @@ vmdk_parse_extents(const char *desc, BlockDriverState *bs, QDict *options,
         } else {
             error_setg(errp, "Unsupported extent type '%s'", type);
             bdrv_graph_rdunlock_main_loop();
-            bdrv_graph_wrlock(NULL);
+            bdrv_graph_wrlock();
             bdrv_unref_child(bs, extent_file);
             bdrv_graph_wrunlock();
             bdrv_graph_rdlock_main_loop();

@@ -29,7 +29,7 @@ static bool memory_device_is_empty(const MemoryDeviceState *md)
     /* dropping const here is fine as we don't touch the memory region */
     mr = mdc->get_memory_region((MemoryDeviceState *)md, &local_err);
     if (local_err) {
-        /* Not empty, we'll report errors later when ontaining the MR again. */
+        /* Not empty, we'll report errors later when containing the MR again. */
         error_free(local_err);
         return false;
     }
@@ -372,6 +372,20 @@ void memory_device_pre_plug(MemoryDeviceState *md, MachineState *ms,
     memory_device_check_addable(ms, md, mr, &local_err);
     if (local_err) {
         goto out;
+    }
+
+    /*
+     * We always want the memory region size to be multiples of the memory
+     * region alignment: for example, DIMMs with 1G+1byte size don't make
+     * any sense. Note that we don't check that the size is multiples
+     * of any additional alignment requirements the memory device might
+     * have when it comes to the address in physical address space.
+     */
+    if (!QEMU_IS_ALIGNED(memory_region_size(mr),
+                         memory_region_get_alignment(mr))) {
+        error_setg(errp, "backend memory size must be multiple of 0x%"
+                   PRIx64, memory_region_get_alignment(mr));
+        return;
     }
 
     if (legacy_align) {

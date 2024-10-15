@@ -31,6 +31,31 @@
 #include "exec/plugin-gen.h"
 #include "tcg-internal.h"
 
+//// --- Begin LibAFL code ---
+
+/* Copied over from the plugin_maybe_preserve_addr function
+ * The variable needs to be free'd after use
+ *
+ * Only required for loads, where value might overlap addr.
+ */
+static TCGv_i64 libafl_gen_preserve_addr(TCGTemp *addr)
+{
+    /* Save a copy of the vaddr for use after a load.  */
+    TCGv_i64 temp = tcg_temp_ebb_new_i64();
+
+    if (tcg_ctx->addr_type == TCG_TYPE_I32) {
+        tcg_gen_extu_i32_i64(temp, temp_tcgv_i32(addr));
+    } else {
+        tcg_gen_mov_i64(temp, temp_tcgv_i64(addr));
+    }
+
+    return temp;
+}
+
+void libafl_gen_read(TCGTemp *addr, MemOpIdx oi);
+void libafl_gen_write(TCGTemp *addr, MemOpIdx oi);
+
+//// --- End LibAFL code ---
 
 static void check_max_alignment(unsigned a_bits)
 {
@@ -77,6 +102,13 @@ static MemOp tcg_canonicalize_memop(MemOp op, bool is64, bool st)
     if (st) {
         op &= ~MO_SIGN;
     }
+
+    /* In serial mode, reduce atomicity. */
+    if (!(tcg_ctx->gen_tb->cflags & CF_PARALLEL)) {
+        op &= ~MO_ATOM_MASK;
+        op |= MO_ATOM_NONE;
+    }
+
     return op;
 }
 
@@ -168,13 +200,6 @@ plugin_gen_mem_callbacks(TCGv_i64 copy_addr, TCGTemp *orig_addr, MemOpIdx oi,
 #endif
 }
 
-//// --- Begin LibAFL code ---
-
-void libafl_gen_read(TCGTemp *addr, MemOpIdx oi);
-void libafl_gen_write(TCGTemp *addr, MemOpIdx oi);
-
-//// --- End LibAFL code ---
-
 static void tcg_gen_qemu_ld_i32_int(TCGv_i32 val, TCGTemp *addr,
                                     TCGArg idx, MemOp memop)
 {
@@ -202,12 +227,20 @@ static void tcg_gen_qemu_ld_i32_int(TCGv_i32 val, TCGTemp *addr,
     } else {
         opc = INDEX_op_qemu_ld_a64_i32;
     }
+
+//// --- Begin LibAFL code ---
+
+    TCGv_i64 libafl_addr = libafl_gen_preserve_addr(addr);
+
+//// --- End LibAFL code ---
+
     gen_ldst(opc, tcgv_i32_temp(val), NULL, addr, oi);
     plugin_gen_mem_callbacks(copy_addr, addr, orig_oi, QEMU_PLUGIN_MEM_R);
 
 //// --- Begin LibAFL code ---
 
-    libafl_gen_read(addr, oi);
+    libafl_gen_read(tcgv_i64_temp(libafl_addr), orig_oi);
+    tcg_temp_free_i64(libafl_addr);
 
 //// --- End LibAFL code ---
 
@@ -335,12 +368,20 @@ static void tcg_gen_qemu_ld_i64_int(TCGv_i64 val, TCGTemp *addr,
     } else {
         opc = INDEX_op_qemu_ld_a64_i64;
     }
+
+//// --- Begin LibAFL code ---
+    
+    TCGv_i64 libafl_addr = libafl_gen_preserve_addr(addr);
+
+//// --- End LibAFL code ---
+
     gen_ldst_i64(opc, val, addr, oi);
     plugin_gen_mem_callbacks(copy_addr, addr, orig_oi, QEMU_PLUGIN_MEM_R);
 
 //// --- Begin LibAFL code ---
 
-    libafl_gen_read(addr, oi);
+    libafl_gen_read(tcgv_i64_temp(libafl_addr), orig_oi);
+    tcg_temp_free_i64(libafl_addr);
 
 //// --- End LibAFL code ---
 
@@ -459,8 +500,7 @@ static bool use_two_i64_for_i128(MemOp mop)
     case MO_ATOM_SUBALIGN:
     case MO_ATOM_WITHIN16:
     case MO_ATOM_WITHIN16_PAIR:
-        /* In a serialized context, no atomicity is required. */
-        return !(tcg_ctx->gen_tb->cflags & CF_PARALLEL);
+        return false;
     default:
         g_assert_not_reached();
     }
@@ -530,12 +570,19 @@ static void maybe_free_addr64(TCGv_i64 a64)
 static void tcg_gen_qemu_ld_i128_int(TCGv_i128 val, TCGTemp *addr,
                                      TCGArg idx, MemOp memop)
 {
-    const MemOpIdx orig_oi = make_memop_idx(memop, idx);
+    MemOpIdx orig_oi;
     TCGv_i64 ext_addr = NULL;
     TCGOpcode opc;
 
     check_max_alignment(get_alignment_bits(memop));
     tcg_gen_req_mo(TCG_MO_LD_LD | TCG_MO_ST_LD);
+
+    /* In serial mode, reduce atomicity. */
+    if (!(tcg_ctx->gen_tb->cflags & CF_PARALLEL)) {
+        memop &= ~MO_ATOM_MASK;
+        memop |= MO_ATOM_NONE;
+    }
+    orig_oi = make_memop_idx(memop, idx);
 
     /* TODO: For now, force 32-bit hosts to use the helper. */
     if (TCG_TARGET_HAS_qemu_ldst_i128 && TCG_TARGET_REG_BITS == 64) {
@@ -624,6 +671,12 @@ static void tcg_gen_qemu_ld_i128_int(TCGv_i128 val, TCGTemp *addr,
                            tcg_constant_i32(orig_oi));
     }
 
+//// --- Begin LibAFL code ---
+
+    libafl_gen_read(addr, orig_oi);
+
+//// --- End LibAFL code ---
+
     plugin_gen_mem_callbacks(ext_addr, addr, orig_oi, QEMU_PLUGIN_MEM_R);
 }
 
@@ -639,12 +692,19 @@ void tcg_gen_qemu_ld_i128_chk(TCGv_i128 val, TCGTemp *addr, TCGArg idx,
 static void tcg_gen_qemu_st_i128_int(TCGv_i128 val, TCGTemp *addr,
                                      TCGArg idx, MemOp memop)
 {
-    const MemOpIdx orig_oi = make_memop_idx(memop, idx);
+    MemOpIdx orig_oi;
     TCGv_i64 ext_addr = NULL;
     TCGOpcode opc;
 
     check_max_alignment(get_alignment_bits(memop));
     tcg_gen_req_mo(TCG_MO_ST_LD | TCG_MO_ST_ST);
+
+    /* In serial mode, reduce atomicity. */
+    if (!(tcg_ctx->gen_tb->cflags & CF_PARALLEL)) {
+        memop &= ~MO_ATOM_MASK;
+        memop |= MO_ATOM_NONE;
+    }
+    orig_oi = make_memop_idx(memop, idx);
 
     /* TODO: For now, force 32-bit hosts to use the helper. */
 
@@ -732,6 +792,12 @@ static void tcg_gen_qemu_st_i128_int(TCGv_i128 val, TCGTemp *addr,
         gen_helper_st_i128(tcg_env, temp_tcgv_i64(addr), val,
                            tcg_constant_i32(orig_oi));
     }
+
+//// --- Begin LibAFL code ---
+
+    libafl_gen_write(addr, orig_oi);
+
+//// --- End LibAFL code ---
 
     plugin_gen_mem_callbacks(ext_addr, addr, orig_oi, QEMU_PLUGIN_MEM_W);
 }
@@ -1226,7 +1292,13 @@ void tcg_gen_atomic_##NAME##_i32_chk(TCGv_i32 ret, TCGTemp *addr,       \
     tcg_debug_assert(addr_type == tcg_ctx->addr_type);                  \
     tcg_debug_assert((memop & MO_SIZE) <= MO_32);                       \
     if (tcg_ctx->gen_tb->cflags & CF_PARALLEL) {                        \
+/*** --- Begin LibAFL code --- ***/                                     \
+        libafl_gen_read(addr, make_memop_idx(memop, 0));                \
+/*** --- End LibAFL code --- ***/                                       \
         do_atomic_op_i32(ret, addr, val, idx, memop, table_##NAME);     \
+/*** --- Begin LibAFL code --- ***/                                     \
+        libafl_gen_write(addr, make_memop_idx(memop, 0));               \
+/*** --- End LibAFL code --- ***/                                       \
     } else {                                                            \
         do_nonatomic_op_i32(ret, addr, val, idx, memop, NEW,            \
                             tcg_gen_##OP##_i32);                        \
@@ -1239,7 +1311,13 @@ void tcg_gen_atomic_##NAME##_i64_chk(TCGv_i64 ret, TCGTemp *addr,       \
     tcg_debug_assert(addr_type == tcg_ctx->addr_type);                  \
     tcg_debug_assert((memop & MO_SIZE) <= MO_64);                       \
     if (tcg_ctx->gen_tb->cflags & CF_PARALLEL) {                        \
+/*** --- Begin LibAFL code --- ***/                                     \
+        libafl_gen_read(addr, make_memop_idx(memop, 0));                \
+/*** --- End LibAFL code --- ***/                                       \
         do_atomic_op_i64(ret, addr, val, idx, memop, table_##NAME);     \
+/*** --- Begin LibAFL code --- ***/                                     \
+        libafl_gen_write(addr, make_memop_idx(memop, 0));               \
+/*** --- End LibAFL code --- ***/                                       \
     } else {                                                            \
         do_nonatomic_op_i64(ret, addr, val, idx, memop, NEW,            \
                             tcg_gen_##OP##_i64);                        \

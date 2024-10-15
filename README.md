@@ -1,8 +1,10 @@
 # QEMU LibAFL Bridge
 
-This is a patched QEMU that exposes an interface for LibAFL-based fuzzers.
+This is a patched version of [QEMU](https://gitlab.com/qemu-project/qemu) that exposes an interface for LibAFL-based fuzzers.
 
 This raw interface is used in `libafl_qemu` that expose a more Rusty API.
+
+To use `libafl_qemu`, refer to the [LibAFL](https://github.com/AFLplusplus/LibAFL) repository, especially the [qemu](https://github.com/AFLplusplus/LibAFL/tree/main/fuzzers/qemu) fuzzer example.
 
 #### License
 

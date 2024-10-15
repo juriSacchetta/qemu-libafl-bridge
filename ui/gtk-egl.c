@@ -99,7 +99,7 @@ void gd_egl_draw(VirtualConsole *vc)
 #ifdef CONFIG_GBM
         if (dmabuf) {
             egl_dmabuf_create_fence(dmabuf);
-            if (dmabuf->fence_fd > 0) {
+            if (dmabuf->fence_fd >= 0) {
                 qemu_set_fd_handler(dmabuf->fence_fd, gd_hw_gl_flushed, NULL, vc);
                 return;
             }
@@ -150,6 +150,7 @@ void gd_egl_refresh(DisplayChangeListener *dcl)
             vc, vc->window ? vc->window : vc->gfx.drawing_area);
 
     if (vc->gfx.guest_fb.dmabuf && vc->gfx.guest_fb.dmabuf->draw_submitted) {
+        gd_egl_draw(vc);
         return;
     }
 
@@ -249,14 +250,14 @@ void gd_egl_scanout_texture(DisplayChangeListener *dcl,
         if (!vc->gfx.esurface) {
             return;
         }
-
-        eglMakeCurrent(qemu_egl_display, vc->gfx.esurface,
-                       vc->gfx.esurface, vc->gfx.ectx);
-
-        gtk_egl_set_scanout_mode(vc, true);
-        egl_fb_setup_for_tex(&vc->gfx.guest_fb, backing_width, backing_height,
-                             backing_id, false);
     }
+
+    eglMakeCurrent(qemu_egl_display, vc->gfx.esurface,
+                   vc->gfx.esurface, vc->gfx.ectx);
+
+    gtk_egl_set_scanout_mode(vc, true);
+    egl_fb_setup_for_tex(&vc->gfx.guest_fb, backing_width, backing_height,
+                         backing_id, false);
 }
 
 void gd_egl_scanout_dmabuf(DisplayChangeListener *dcl,

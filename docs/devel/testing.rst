@@ -728,7 +728,7 @@ For example to setup the HPPA ports builds of Debian::
     EXECUTABLE=(pwd)/qemu-hppa V=1
 
 The ``DEB_`` variables are substitutions used by
-``debian-boostrap.pre`` which is called to do the initial debootstrap
+``debian-bootstrap.pre`` which is called to do the initial debootstrap
 of the rootfs before it is copied into the container. The second stage
 is run as part of the build. The final image will be tagged as
 ``qemu/debian-sid-hppa``.
@@ -1016,7 +1016,7 @@ class.  Here's a simple usage example:
           self.vm.launch()
           res = self.vm.cmd('human-monitor-command',
                             command_line='info version')
-          self.assertRegexpMatches(res, r'^(\d+\.\d+\.\d)')
+          self.assertRegex(res, r'^(\d+\.\d+\.\d)')
 
 To execute your test, run:
 
@@ -1077,7 +1077,7 @@ and hypothetical example follows:
               'human-monitor-command',
               command_line='info version')
 
-          self.assertEquals(first_res, second_res, third_res)
+          self.assertEqual(first_res, second_res, third_res)
 
 At test "tear down", ``avocado_qemu.Test`` handles all the QEMUMachines
 shutdown.
@@ -1346,6 +1346,17 @@ the environment.
 The definition of *large* is a bit arbitrary here, but it usually means an
 asset which occupies at least 1GB of size on disk when uncompressed.
 
+SPEED
+^^^^^
+Tests which have a long runtime will not be run unless ``SPEED=slow`` is
+exported on the environment.
+
+The definition of *long* is a bit arbitrary here, and it depends on the
+usefulness of the test too. A unique test is worth spending more time on,
+small variations on existing tests perhaps less so. As a rough guide,
+a test or set of similar tests which take more than 100 seconds to
+complete.
+
 AVOCADO_ALLOW_UNTRUSTED_CODE
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 There are tests which will boot a kernel image or firmware that can be
@@ -1371,23 +1382,33 @@ conditions. For example, tests that take longer to execute when QEMU is
 compiled with debug flags. Therefore, the ``AVOCADO_TIMEOUT_EXPECTED`` variable
 has been used to determine whether those tests should run or not.
 
-GITLAB_CI
-^^^^^^^^^
-A number of tests are flagged to not run on the GitLab CI. Usually because
-they proved to the flaky or there are constraints on the CI environment which
-would make them fail. If you encounter a similar situation then use that
-variable as shown on the code snippet below to skip the test:
-
-.. code::
-
-  @skipIf(os.getenv('GITLAB_CI'), 'Running on GitLab')
-  def test(self):
-      do_something()
-
 QEMU_TEST_FLAKY_TESTS
 ^^^^^^^^^^^^^^^^^^^^^
 Some tests are not working reliably and thus are disabled by default.
-Set this environment variable to enable them.
+This includes tests that don't run reliably on GitLab's CI which
+usually expose real issues that are rarely seen on developer machines
+due to the constraints of the CI environment. If you encounter a
+similar situation then raise a bug and then mark the test as shown on
+the code snippet below:
+
+.. code::
+
+  # See https://gitlab.com/qemu-project/qemu/-/issues/nnnn
+  @skipUnless(os.getenv('QEMU_TEST_FLAKY_TESTS'), 'Test is unstable on GitLab')
+  def test(self):
+      do_something()
+
+You can also add ``:avocado: tags=flaky`` to the test meta-data so
+only the flaky tests can be run as a group:
+
+.. code::
+
+   env QEMU_TEST_FLAKY_TESTS=1 ./pyvenv/bin/avocado \
+      run tests/avocado -filter-by-tags=flaky
+
+Tests should not live in this state forever and should either be fixed
+or eventually removed.
+
 
 Uninstalling Avocado
 ~~~~~~~~~~~~~~~~~~~~

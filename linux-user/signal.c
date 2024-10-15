@@ -34,9 +34,21 @@
 #include "user/safe-syscall.h"
 #include "tcg/tcg.h"
 
+//// --- Begin LibAFL code ---
+
+#include "libafl/user.h"
+
+//// --- End LibAFL code ---
+
+/* target_siginfo_t must fit in gdbstub's siginfo save area. */
+QEMU_BUILD_BUG_ON(sizeof(target_siginfo_t) > MAX_SIGINFO_LENGTH);
+
 static struct target_sigaction sigact_table[TARGET_NSIG];
 
-static void host_signal_handler(int host_signum, siginfo_t *info,
+//// --- Begin LibAFL code ---
+/* static */
+//// --- End LibAFL code ---
+void host_signal_handler(int host_signum, siginfo_t *info,
                                 void *puc);
 
 /* Fallback addresses into sigtramp page. */
@@ -172,7 +184,7 @@ void target_to_host_old_sigset(sigset_t *sigset,
 
 int block_signals(void)
 {
-    TaskState *ts = (TaskState *)thread_cpu->opaque;
+    TaskState *ts = get_task_state(thread_cpu);
     sigset_t set;
 
     /* It's OK to block everything including SIGSEGV, because we won't
@@ -194,7 +206,7 @@ int block_signals(void)
  */
 int do_sigprocmask(int how, const sigset_t *set, sigset_t *oldset)
 {
-    TaskState *ts = (TaskState *)thread_cpu->opaque;
+    TaskState *ts = get_task_state(thread_cpu);
 
     if (oldset) {
         *oldset = ts->signal_mask;
@@ -237,7 +249,7 @@ int do_sigprocmask(int how, const sigset_t *set, sigset_t *oldset)
  */
 void set_sigmask(const sigset_t *set)
 {
-    TaskState *ts = (TaskState *)thread_cpu->opaque;
+    TaskState *ts = get_task_state(thread_cpu);
 
     ts->signal_mask = *set;
 }
@@ -246,7 +258,7 @@ void set_sigmask(const sigset_t *set)
 
 int on_sig_stack(unsigned long sp)
 {
-    TaskState *ts = (TaskState *)thread_cpu->opaque;
+    TaskState *ts = get_task_state(thread_cpu);
 
     return (sp - ts->sigaltstack_used.ss_sp
             < ts->sigaltstack_used.ss_size);
@@ -254,7 +266,7 @@ int on_sig_stack(unsigned long sp)
 
 int sas_ss_flags(unsigned long sp)
 {
-    TaskState *ts = (TaskState *)thread_cpu->opaque;
+    TaskState *ts = get_task_state(thread_cpu);
 
     return (ts->sigaltstack_used.ss_size == 0 ? SS_DISABLE
             : on_sig_stack(sp) ? SS_ONSTACK : 0);
@@ -265,7 +277,7 @@ abi_ulong target_sigsp(abi_ulong sp, struct target_sigaction *ka)
     /*
      * This is the X/Open sanctioned signal stack switching.
      */
-    TaskState *ts = (TaskState *)thread_cpu->opaque;
+    TaskState *ts = get_task_state(thread_cpu);
 
     if ((ka->sa_flags & TARGET_SA_ONSTACK) && !sas_ss_flags(sp)) {
         return ts->sigaltstack_used.ss_sp + ts->sigaltstack_used.ss_size;
@@ -275,7 +287,7 @@ abi_ulong target_sigsp(abi_ulong sp, struct target_sigaction *ka)
 
 void target_save_altstack(target_stack_t *uss, CPUArchState *env)
 {
-    TaskState *ts = (TaskState *)thread_cpu->opaque;
+    TaskState *ts = get_task_state(thread_cpu);
 
     __put_user(ts->sigaltstack_used.ss_sp, &uss->ss_sp);
     __put_user(sas_ss_flags(get_sp_from_cpustate(env)), &uss->ss_flags);
@@ -284,7 +296,7 @@ void target_save_altstack(target_stack_t *uss, CPUArchState *env)
 
 abi_long target_restore_altstack(target_stack_t *uss, CPUArchState *env)
 {
-    TaskState *ts = (TaskState *)thread_cpu->opaque;
+    TaskState *ts = get_task_state(thread_cpu);
     size_t minstacksize = TARGET_MINSIGSTKSZ;
     target_stack_t ss;
 
@@ -409,8 +421,8 @@ static inline void host_to_target_siginfo_noswap(target_siginfo_t *tinfo,
     tinfo->si_code = deposit32(si_code, 16, 16, si_type);
 }
 
-void tswap_siginfo(target_siginfo_t *tinfo,
-                   const target_siginfo_t *info)
+static void tswap_siginfo(target_siginfo_t *tinfo,
+                          const target_siginfo_t *info)
 {
     int si_type = extract32(info->si_code, 16, 16);
     int si_code = sextract32(info->si_code, 0, 16);
@@ -571,7 +583,7 @@ static void signal_table_init(void)
 
 void signal_init(void)
 {
-    TaskState *ts = (TaskState *)thread_cpu->opaque;
+    TaskState *ts = get_task_state(thread_cpu);
     struct sigaction act, oact;
 
     /* initialize signal conversion tables */
@@ -623,7 +635,6 @@ void signal_init(void)
 void force_sig(int sig)
 {
     CPUState *cpu = thread_cpu;
-    CPUArchState *env = cpu_env(cpu);
     target_siginfo_t info = {};
 
     info.si_signo = sig;
@@ -631,7 +642,7 @@ void force_sig(int sig)
     info.si_code = TARGET_SI_KERNEL;
     info._sifields._kill._pid = 0;
     info._sifields._kill._uid = 0;
-    queue_signal(env, info.si_signo, QEMU_SI_KILL, &info);
+    queue_signal(cpu_env(cpu), info.si_signo, QEMU_SI_KILL, &info);
 }
 
 /* Force a synchronously taken signal to a specific env.
@@ -656,14 +667,13 @@ void force_sig_env(CPUArchState *env, int sig)
 void force_sig_fault(int sig, int code, abi_ulong addr)
 {
     CPUState *cpu = thread_cpu;
-    CPUArchState *env = cpu_env(cpu);
     target_siginfo_t info = {};
 
     info.si_signo = sig;
     info.si_errno = 0;
     info.si_code = code;
     info._sifields._sigfault._addr = addr;
-    queue_signal(env, sig, QEMU_SI_FAULT, &info);
+    queue_signal(cpu_env(cpu), sig, QEMU_SI_FAULT, &info);
 }
 
 /* Force a SIGSEGV if we couldn't write to memory trying to set
@@ -686,7 +696,7 @@ void force_sigsegv(int oldsig)
 void cpu_loop_exit_sigsegv(CPUState *cpu, target_ulong addr,
                            MMUAccessType access_type, bool maperr, uintptr_t ra)
 {
-    const struct TCGCPUOps *tcg_ops = CPU_GET_CLASS(cpu)->tcg_ops;
+    const TCGCPUOps *tcg_ops = CPU_GET_CLASS(cpu)->tcg_ops;
 
     if (tcg_ops->record_sigsegv) {
         tcg_ops->record_sigsegv(cpu, addr, access_type, maperr, ra);
@@ -702,7 +712,7 @@ void cpu_loop_exit_sigsegv(CPUState *cpu, target_ulong addr,
 void cpu_loop_exit_sigbus(CPUState *cpu, target_ulong addr,
                           MMUAccessType access_type, uintptr_t ra)
 {
-    const struct TCGCPUOps *tcg_ops = CPU_GET_CLASS(cpu)->tcg_ops;
+    const TCGCPUOps *tcg_ops = CPU_GET_CLASS(cpu)->tcg_ops;
 
     if (tcg_ops->record_sigbus) {
         tcg_ops->record_sigbus(cpu, addr, access_type, ra);
@@ -741,17 +751,11 @@ void die_with_signal(int host_sig)
     _exit(EXIT_FAILURE);
 }
 
-//// --- Begin LibAFL code ---
-
-void (*libafl_dump_core_hook)(int host_sig);
-
-//// --- End LibAFL code ---
-
 static G_NORETURN
 void dump_core_and_abort(CPUArchState *env, int target_sig)
 {
     CPUState *cpu = env_cpu(env);
-    TaskState *ts = (TaskState *)cpu->opaque;
+    TaskState *ts = get_task_state(cpu);
     int host_sig, core_dumped = 0;
 
     /* On exit, undo the remapping of SIGABRT. */
@@ -784,8 +788,8 @@ void dump_core_and_abort(CPUArchState *env, int target_sig)
     
     //// --- Begin LibAFL code ---
 
-    if (libafl_dump_core_hook) libafl_dump_core_hook(host_sig);
-    
+    libafl_dump_core_exec(host_sig);
+
     // die_with_signal_nodfl(host_sig); // to trigger LibAFL sig handler
 
     //// --- End LibAFL code ---
@@ -799,7 +803,7 @@ void queue_signal(CPUArchState *env, int sig, int si_type,
                   target_siginfo_t *info)
 {
     CPUState *cpu = env_cpu(env);
-    TaskState *ts = cpu->opaque;
+    TaskState *ts = get_task_state(cpu);
 
     trace_user_queue_signal(env, sig);
 
@@ -904,9 +908,9 @@ void die_from_signal(siginfo_t *info)
                  sig, code, info->si_addr);
 
     //// --- Begin LibAFL code ---
-    
-    if (libafl_dump_core_hook) libafl_dump_core_hook(info->si_signo);
-    
+
+    libafl_dump_core_exec(info->si_signo);
+
     //// --- End LibAFL code ---
 
     die_with_signal(info->si_signo);
@@ -962,7 +966,7 @@ static void host_sigsegv_handler(CPUState *cpu, siginfo_t *info,
     cpu_loop_exit_sigsegv(cpu, guest_addr, access_type, maperr, pc);
 }
 
-static void host_sigbus_handler(CPUState *cpu, siginfo_t *info,
+static uintptr_t host_sigbus_handler(CPUState *cpu, siginfo_t *info,
                                 host_sigcontext *uc)
 {
     uintptr_t pc = host_signal_pc(uc);
@@ -984,13 +988,13 @@ static void host_sigbus_handler(CPUState *cpu, siginfo_t *info,
         sigprocmask(SIG_SETMASK, host_signal_mask(uc), NULL);
         cpu_loop_exit_sigbus(cpu, guest_addr, access_type, pc);
     }
+    return pc;
 }
 
 //// --- Begin LibAFL code ---
 
 // int libafl_qemu_is_tb_protected_write(int host_sig, siginfo_t *info,
 //                                       host_sigcontext *uc);
-void libafl_qemu_handle_crash(int host_sig, siginfo_t *info, void *puc);
 
 /* int libafl_qemu_is_tb_protected_write(int host_sig, siginfo_t *info,
                                       host_sigcontext *uc)
@@ -1011,17 +1015,16 @@ void libafl_qemu_handle_crash(int host_sig, siginfo_t *info, void *puc);
                                        pc, guest_addr);
 } */
 
-void libafl_qemu_handle_crash(int host_sig, siginfo_t *info, void *puc) {
-    host_signal_handler(host_sig, info, puc);
-}
-
 //// --- End LibAFL code ---
 
-static void host_signal_handler(int host_sig, siginfo_t *info, void *puc)
+//// --- Begin LibAFL code ---
+/* static */
+//// --- End LibAFL code ---
+void host_signal_handler(int host_sig, siginfo_t *info, void *puc)
 {
     CPUState *cpu = thread_cpu;
     CPUArchState *env = cpu_env(cpu);
-    TaskState *ts = cpu->opaque;
+    TaskState *ts = get_task_state(cpu);
     target_siginfo_t tinfo;
     host_sigcontext *uc = puc;
     struct emulated_sigtable *k;
@@ -1042,7 +1045,7 @@ static void host_signal_handler(int host_sig, siginfo_t *info, void *puc)
             host_sigsegv_handler(cpu, info, uc);
             return;
         case SIGBUS:
-            host_sigbus_handler(cpu, info, uc);
+            pc = host_sigbus_handler(cpu, info, uc);
             sync_sig = true;
             break;
         case SIGILL:
@@ -1245,15 +1248,27 @@ static void handle_pending_signal(CPUArchState *cpu_env, int sig,
     CPUState *cpu = env_cpu(cpu_env);
     abi_ulong handler;
     sigset_t set;
+    target_siginfo_t unswapped;
     target_sigset_t target_old_set;
     struct target_sigaction *sa;
-    TaskState *ts = cpu->opaque;
+    TaskState *ts = get_task_state(cpu);
 
     trace_user_handle_signal(cpu_env, sig);
     /* dequeue signal */
     k->pending = 0;
 
-    sig = gdb_handlesig(cpu, sig);
+    /*
+     * Writes out siginfo values byteswapped, accordingly to the target.
+     * It also cleans the si_type from si_code making it correct for
+     * the target.  We must hold on to the original unswapped copy for
+     * strace below, because si_type is still required there.
+     */
+    if (unlikely(qemu_loglevel_mask(LOG_STRACE))) {
+        unswapped = k->info;
+    }
+    tswap_siginfo(&k->info, &k->info);
+
+    sig = gdb_handlesig(cpu, sig, NULL, &k->info, sizeof(k->info));
     if (!sig) {
         sa = NULL;
         handler = TARGET_SIG_IGN;
@@ -1263,7 +1278,7 @@ static void handle_pending_signal(CPUArchState *cpu_env, int sig,
     }
 
     if (unlikely(qemu_loglevel_mask(LOG_STRACE))) {
-        print_taken_signal(sig, &k->info);
+        print_taken_signal(sig, &unswapped);
     }
     
     //// --- Start LibAFL code ---
@@ -1338,7 +1353,7 @@ void process_pending_signals(CPUArchState *cpu_env)
 {
     CPUState *cpu = env_cpu(cpu_env);
     int sig;
-    TaskState *ts = cpu->opaque;
+    TaskState *ts = get_task_state(cpu);
     sigset_t set;
     sigset_t *blocked_set;
 
@@ -1398,7 +1413,7 @@ void process_pending_signals(CPUArchState *cpu_env)
 int process_sigsuspend_mask(sigset_t **pset, target_ulong sigset,
                             target_ulong sigsize)
 {
-    TaskState *ts = (TaskState *)thread_cpu->opaque;
+    TaskState *ts = get_task_state(thread_cpu);
     sigset_t *host_set = &ts->sigsuspend_mask;
     target_sigset_t *target_sigset;
 

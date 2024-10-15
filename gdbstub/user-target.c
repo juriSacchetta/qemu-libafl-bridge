@@ -14,6 +14,11 @@
 #ifdef CONFIG_LINUX
 #include "linux-user/loader.h"
 #include "linux-user/qemu.h"
+
+//// --- Begin LibAFL code ---
+#include "libafl/gdb.h"
+//// --- End LibAFL code ---
+
 #endif
 
 /*
@@ -204,7 +209,7 @@ int gdb_target_signal_to_gdb(int sig)
 
 int gdb_get_cpu_index(CPUState *cpu)
 {
-    TaskState *ts = (TaskState *) cpu->opaque;
+    TaskState *ts = get_task_state(cpu);
     return ts ? ts->ts_tid : -1;
 }
 
@@ -305,26 +310,16 @@ void gdb_handle_query_rcmd(GArray *params, void *user_ctx)
     g_assert(gdbserver_state.mem_buf->len == 0);
     len = len / 2;
     gdb_hextomem(gdbserver_state.mem_buf, get_param(params, 0)->data, len);
-    
-    //// --- Begin LibAFL code ---
 
-    struct libafl_custom_gdb_cmd** c = &libafl_qemu_gdb_cmds;
-    int recognized = 0;
-    while (*c) {
-        recognized |= (*c)->callback((*c)->data, gdbserver_state.mem_buf->data, gdbserver_state.mem_buf->len);
-        c = &(*c)->next;
-    }
-
-    if (recognized) {
+    if (libafl_qemu_gdb_exec()) {
         gdb_put_packet("OK");
     } else {
         gdb_put_packet("");
     }
 }
+#endif
 
 //// --- End LibAFL code ---
-
-#endif
 
 static const char *get_filename_param(GArray *params, int i)
 {
@@ -439,7 +434,7 @@ void gdb_handle_query_xfer_exec_file(GArray *params, void *user_ctx)
         return;
     }
 
-    TaskState *ts = cpu->opaque;
+    TaskState *ts = get_task_state(cpu);
     if (!ts || !ts->bprm || !ts->bprm->filename) {
         gdb_put_packet("E00");
         return;
@@ -457,4 +452,9 @@ void gdb_handle_query_xfer_exec_file(GArray *params, void *user_ctx)
     g_string_printf(gdbserver_state.str_buf, "l%.*s", length,
                     ts->bprm->filename + offset);
     gdb_put_strbuf();
+}
+
+int gdb_target_sigtrap(void)
+{
+    return TARGET_SIGTRAP;
 }

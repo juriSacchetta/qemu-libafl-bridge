@@ -126,6 +126,10 @@ static MemTxResult ufs_dma_read_req_upiu(UfsRequest *req)
     copy_size = sizeof(UtpUpiuHeader) + UFS_TRANSACTION_SPECIFIC_FIELD_SIZE +
                 data_segment_length;
 
+    if (copy_size > sizeof(req->req_upiu)) {
+        copy_size = sizeof(req->req_upiu);
+    }
+
     ret = ufs_addr_read(u, req_upiu_base_addr, &req->req_upiu, copy_size);
     if (ret) {
         trace_ufs_err_dma_read_req_upiu(req->slot, req_upiu_base_addr);
@@ -223,6 +227,10 @@ static MemTxResult ufs_dma_write_rsp_upiu(UfsRequest *req)
 
     if (copy_size > rsp_upiu_byte_len) {
         copy_size = rsp_upiu_byte_len;
+    }
+
+    if (copy_size > sizeof(req->rsp_upiu)) {
+        copy_size = sizeof(req->rsp_upiu);
     }
 
     ret = ufs_addr_write(u, rsp_upiu_base_addr, &req->rsp_upiu, copy_size);
@@ -1323,9 +1331,17 @@ static bool ufs_bus_check_address(BusState *qbus, DeviceState *qdev,
     return true;
 }
 
+static char *ufs_bus_get_dev_path(DeviceState *dev)
+{
+    BusState *bus = qdev_get_parent_bus(dev);
+
+    return qdev_get_dev_path(bus->parent);
+}
+
 static void ufs_bus_class_init(ObjectClass *class, void *data)
 {
     BusClass *bc = BUS_CLASS(class);
+    bc->get_dev_path = ufs_bus_get_dev_path;
     bc->check_address = ufs_bus_check_address;
 }
 

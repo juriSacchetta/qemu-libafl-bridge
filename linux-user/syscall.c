@@ -54,6 +54,11 @@
 #include <sys/sysinfo.h>
 #include <sys/signalfd.h>
 //#include <sys/user.h>
+//// --- Begin LibAFL code ---
+
+#include "libafl/hooks/syscall.h"
+
+//// --- End LibAFL code ---
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
@@ -811,30 +816,16 @@ static inline int host_to_target_sock_type(int host_type)
     return target_type;
 }
 
-static abi_ulong target_brk, initial_target_brk;
+//// --- Begin LibAFL code ---
+/* static */
+//// --- End LibAFL code ---
+abi_ulong target_brk, initial_target_brk;
 
 void target_set_brk(abi_ulong new_brk)
 {
     target_brk = TARGET_PAGE_ALIGN(new_brk);
     initial_target_brk = target_brk;
 }
-
-//// --- Begin LibAFL code ---
-
-uint64_t libafl_get_brk(void);
-uint64_t libafl_set_brk(uint64_t new_brk);
-
-uint64_t libafl_get_brk(void) {
-  return (uint64_t)target_brk;
-}
-
-uint64_t libafl_set_brk(uint64_t new_brk) {
-  uint64_t old_brk = (uint64_t)target_brk;
-  target_brk = (abi_ulong)new_brk;
-  return old_brk;
-}
-
-//// --- End LibAFL code ---
 
 /* do_brk() must return target values and target errnos. */
 abi_long do_brk(abi_ulong brk_val)
@@ -859,7 +850,7 @@ abi_long do_brk(abi_ulong brk_val)
         return target_brk;
     }
 
-    /* Release heap if necesary */
+    /* Release heap if necessary */
     if (new_brk < old_brk) {
         target_munmap(new_brk, old_brk - new_brk);
 
@@ -2313,18 +2304,13 @@ static abi_long do_setsockopt(int sockfd, int level, int optname,
         switch (optname) {
         case ALG_SET_KEY:
         {
-            char *alg_key = g_malloc(optlen);
-
+            char *alg_key = lock_user(VERIFY_READ, optval_addr, optlen, 1);
             if (!alg_key) {
-                return -TARGET_ENOMEM;
-            }
-            if (copy_from_user(alg_key, optval_addr, optlen)) {
-                g_free(alg_key);
                 return -TARGET_EFAULT;
             }
             ret = get_errno(setsockopt(sockfd, level, optname,
                                        alg_key, optlen));
-            g_free(alg_key);
+            unlock_user(alg_key, optval_addr, optlen);
             break;
         }
         case ALG_SET_AEAD_AUTHSIZE:
@@ -6525,16 +6511,28 @@ static abi_long do_prctl(CPUArchState *env, abi_long option, abi_long arg2,
     case PR_SET_NO_NEW_PRIVS:
     case PR_GET_IO_FLUSHER:
     case PR_SET_IO_FLUSHER:
+    case PR_SET_CHILD_SUBREAPER:
+    case PR_GET_SPECULATION_CTRL:
+    case PR_SET_SPECULATION_CTRL:
         /* Some prctl options have no pointer arguments and we can pass on. */
         return get_errno(prctl(option, arg2, arg3, arg4, arg5));
 
     case PR_GET_CHILD_SUBREAPER:
-    case PR_SET_CHILD_SUBREAPER:
-    case PR_GET_SPECULATION_CTRL:
-    case PR_SET_SPECULATION_CTRL:
+        {
+            int val;
+            ret = get_errno(prctl(PR_GET_CHILD_SUBREAPER, &val,
+                                  arg3, arg4, arg5));
+            if (!is_error(ret) && put_user_s32(val, arg2)) {
+                return -TARGET_EFAULT;
+            }
+            return ret;
+        }
+
     case PR_GET_TID_ADDRESS:
-        /* TODO */
-        return -TARGET_EINVAL;
+        {
+            TaskState *ts = env_cpu(env)->opaque;
+            return put_user_ual(ts->child_tidptr, arg2);
+        }
 
     case PR_GET_FPEXC:
     case PR_SET_FPEXC:
@@ -6585,9 +6583,7 @@ typedef struct {
 
 //// --- Begin LibAFL code ---
 
-#include "libafl_extras/hook.h"
-
-extern __thread CPUArchState *libafl_qemu_env;
+#include "libafl/hooks/thread.h"
 
 //// --- End LibAFL code ---
 
@@ -6607,7 +6603,8 @@ static void *clone_func(void *arg)
     env = info->env;
     cpu = env_cpu(env);
     thread_cpu = cpu;
-    ts = (TaskState *)cpu->opaque;
+    ts = get_task_state(cpu);
+    info->tid = sys_gettid();
     task_settid(ts);
     if (info->child_tidptr)
         put_user_u32(info->tid, info->child_tidptr);
@@ -6639,17 +6636,7 @@ static void *clone_func(void *arg)
 #endif
     //// --- Begin LibAFL code ---
 
-    libafl_qemu_env = env;
-    if (libafl_new_thread_hooks) {
-        bool continue_execution = true;
-        int tid = sys_gettid();
-        struct libafl_new_thread_hook* h = libafl_new_thread_hooks;
-        while (h) {
-            continue_execution = h->callback(h->data, tid) && continue_execution;
-            h = h->next;
-        }
-        if (continue_execution) cpu_loop(env);
-    } else {
+    if (libafl_hook_new_thread_run(env, info->tid)) {
         cpu_loop(env);
     }
 
@@ -6684,7 +6671,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         flags &= ~(CLONE_VFORK | CLONE_VM);
 
     if (flags & CLONE_VM) {
-        TaskState *parent_ts = (TaskState *)cpu->opaque;
+        TaskState *parent_ts = get_task_state(cpu);
         new_thread_info info;
 #ifndef QEMU_FIBERS
         pthread_attr_t attr;
@@ -6835,7 +6822,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         if (ret == 0) {
             /* Child Process.  */
             cpu_clone_regs_child(env, newsp, flags);
-            fork_end(1);
+            fork_end(ret);
 #ifdef QEMU_FIBERS
             fibers_fork_end(1);
 #endif
@@ -6849,7 +6836,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
                 put_user_u32(sys_gettid(), child_tidptr);
             if (flags & CLONE_PARENT_SETTID)
                 put_user_u32(sys_gettid(), parent_tidptr);
-            ts = (TaskState *)cpu->opaque;
+            ts = get_task_state(cpu);
             if (flags & CLONE_SETTLS)
                 cpu_set_tls (env, newtls);
             if (flags & CLONE_CHILD_CLEARTID)
@@ -6869,8 +6856,8 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
                 }
 #endif
                 put_user_u32(pid_fd, parent_tidptr);
-                }
-            fork_end(0);
+            }
+            fork_end(ret);
         }
         g_assert(!cpu_in_exclusive_context(cpu));
     }
@@ -7372,11 +7359,17 @@ static inline int tswapid(int id)
 #else
 #define __NR_sys_setresgid __NR_setresgid
 #endif
+#ifdef __NR_setgroups32
+#define __NR_sys_setgroups __NR_setgroups32
+#else
+#define __NR_sys_setgroups __NR_setgroups
+#endif
 
 _syscall1(int, sys_setuid, uid_t, uid)
 _syscall1(int, sys_setgid, gid_t, gid)
 _syscall3(int, sys_setresuid, uid_t, ruid, uid_t, euid, uid_t, suid)
 _syscall3(int, sys_setresgid, gid_t, rgid, gid_t, egid, gid_t, sgid)
+_syscall2(int, sys_setgroups, int, size, gid_t *, grouplist)
 
 void syscall_init(void)
 {
@@ -8122,7 +8115,7 @@ int host_to_target_waitstatus(int status)
 static int open_self_cmdline(CPUArchState *cpu_env, int fd)
 {
     CPUState *cpu = env_cpu(cpu_env);
-    struct linux_binprm *bprm = ((TaskState *)cpu->opaque)->bprm;
+    struct linux_binprm *bprm = get_task_state(cpu)->bprm;
     int i;
 
     for (i = 0; i < bprm->argc; i++) {
@@ -8170,6 +8163,10 @@ static void open_self_maps_4(const struct open_self_maps_data *d,
         path = "[heap]";
     } else if (start == info->vdso) {
         path = "[vdso]";
+#ifdef TARGET_X86_64
+    } else if (start == TARGET_VSYSCALL_PAGE) {
+        path = "[vsyscall]";
+#endif
     }
 
     /* Except null device (MAP_ANON), adjust offset for this fragment. */
@@ -8258,6 +8255,18 @@ static int open_self_maps_2(void *opaque, target_ulong guest_start,
     uintptr_t host_start = (uintptr_t)g2h_untagged(guest_start);
     uintptr_t host_last = (uintptr_t)g2h_untagged(guest_end - 1);
 
+#ifdef TARGET_X86_64
+    /*
+     * Because of the extremely high position of the page within the guest
+     * virtual address space, this is not backed by host memory at all.
+     * Therefore the loop below would fail.  This is the only instance
+     * of not having host backing memory.
+     */
+    if (guest_start == TARGET_VSYSCALL_PAGE) {
+        return open_self_maps_3(opaque, guest_start, guest_end, flags);
+    }
+#endif
+
     while (1) {
         IntervalTreeNode *n =
             interval_tree_iter_first(d->host_maps, host_start, host_start);
@@ -8306,7 +8315,7 @@ static int open_self_smaps(CPUArchState *cpu_env, int fd)
 static int open_self_stat(CPUArchState *cpu_env, int fd)
 {
     CPUState *cpu = env_cpu(cpu_env);
-    TaskState *ts = cpu->opaque;
+    TaskState *ts = get_task_state(cpu);
     g_autoptr(GString) buf = g_string_new(NULL);
     int i;
 
@@ -8347,7 +8356,7 @@ static int open_self_stat(CPUArchState *cpu_env, int fd)
 static int open_self_auxv(CPUArchState *cpu_env, int fd)
 {
     CPUState *cpu = env_cpu(cpu_env);
-    TaskState *ts = cpu->opaque;
+    TaskState *ts = get_task_state(cpu);
     abi_ulong auxv = ts->info->saved_auxv;
     abi_ulong len = ts->info->auxv_len;
     char *ptr;
@@ -8968,13 +8977,43 @@ static int do_getdents64(abi_long dirfd, abi_long arg2, abi_long count)
 #define RISCV_HWPROBE_KEY_BASE_BEHAVIOR 3
 #define     RISCV_HWPROBE_BASE_BEHAVIOR_IMA (1 << 0)
 
-#define RISCV_HWPROBE_KEY_IMA_EXT_0     4
-#define     RISCV_HWPROBE_IMA_FD       (1 << 0)
-#define     RISCV_HWPROBE_IMA_C        (1 << 1)
-#define     RISCV_HWPROBE_IMA_V        (1 << 2)
-#define     RISCV_HWPROBE_EXT_ZBA      (1 << 3)
-#define     RISCV_HWPROBE_EXT_ZBB      (1 << 4)
-#define     RISCV_HWPROBE_EXT_ZBS      (1 << 5)
+#define RISCV_HWPROBE_KEY_IMA_EXT_0         4
+#define     RISCV_HWPROBE_IMA_FD            (1 << 0)
+#define     RISCV_HWPROBE_IMA_C             (1 << 1)
+#define     RISCV_HWPROBE_IMA_V             (1 << 2)
+#define     RISCV_HWPROBE_EXT_ZBA           (1 << 3)
+#define     RISCV_HWPROBE_EXT_ZBB           (1 << 4)
+#define     RISCV_HWPROBE_EXT_ZBS           (1 << 5)
+#define     RISCV_HWPROBE_EXT_ZICBOZ        (1 << 6)
+#define     RISCV_HWPROBE_EXT_ZBC           (1 << 7)
+#define     RISCV_HWPROBE_EXT_ZBKB          (1 << 8)
+#define     RISCV_HWPROBE_EXT_ZBKC          (1 << 9)
+#define     RISCV_HWPROBE_EXT_ZBKX          (1 << 10)
+#define     RISCV_HWPROBE_EXT_ZKND          (1 << 11)
+#define     RISCV_HWPROBE_EXT_ZKNE          (1 << 12)
+#define     RISCV_HWPROBE_EXT_ZKNH          (1 << 13)
+#define     RISCV_HWPROBE_EXT_ZKSED         (1 << 14)
+#define     RISCV_HWPROBE_EXT_ZKSH          (1 << 15)
+#define     RISCV_HWPROBE_EXT_ZKT           (1 << 16)
+#define     RISCV_HWPROBE_EXT_ZVBB          (1 << 17)
+#define     RISCV_HWPROBE_EXT_ZVBC          (1 << 18)
+#define     RISCV_HWPROBE_EXT_ZVKB          (1 << 19)
+#define     RISCV_HWPROBE_EXT_ZVKG          (1 << 20)
+#define     RISCV_HWPROBE_EXT_ZVKNED        (1 << 21)
+#define     RISCV_HWPROBE_EXT_ZVKNHA        (1 << 22)
+#define     RISCV_HWPROBE_EXT_ZVKNHB        (1 << 23)
+#define     RISCV_HWPROBE_EXT_ZVKSED        (1 << 24)
+#define     RISCV_HWPROBE_EXT_ZVKSH         (1 << 25)
+#define     RISCV_HWPROBE_EXT_ZVKT          (1 << 26)
+#define     RISCV_HWPROBE_EXT_ZFH           (1 << 27)
+#define     RISCV_HWPROBE_EXT_ZFHMIN        (1 << 28)
+#define     RISCV_HWPROBE_EXT_ZIHINTNTL     (1 << 29)
+#define     RISCV_HWPROBE_EXT_ZVFH          (1 << 30)
+#define     RISCV_HWPROBE_EXT_ZVFHMIN       (1 << 31)
+#define     RISCV_HWPROBE_EXT_ZFA           (1ULL << 32)
+#define     RISCV_HWPROBE_EXT_ZTSO          (1ULL << 33)
+#define     RISCV_HWPROBE_EXT_ZACAS         (1ULL << 34)
+#define     RISCV_HWPROBE_EXT_ZICOND        (1ULL << 35)
 
 #define RISCV_HWPROBE_KEY_CPUPERF_0     5
 #define     RISCV_HWPROBE_MISALIGNED_UNKNOWN     (0 << 0)
@@ -8983,6 +9022,8 @@ static int do_getdents64(abi_long dirfd, abi_long arg2, abi_long count)
 #define     RISCV_HWPROBE_MISALIGNED_FAST        (3 << 0)
 #define     RISCV_HWPROBE_MISALIGNED_UNSUPPORTED (4 << 0)
 #define     RISCV_HWPROBE_MISALIGNED_MASK        (7 << 0)
+
+#define RISCV_HWPROBE_KEY_ZICBOZ_BLOCK_SIZE 6
 
 struct riscv_hwprobe {
     abi_llong  key;
@@ -9031,10 +9072,74 @@ static void risc_hwprobe_fill_pairs(CPURISCVState *env,
                      RISCV_HWPROBE_EXT_ZBB : 0;
             value |= cfg->ext_zbs ?
                      RISCV_HWPROBE_EXT_ZBS : 0;
+            value |= cfg->ext_zicboz ?
+                     RISCV_HWPROBE_EXT_ZICBOZ : 0;
+            value |= cfg->ext_zbc ?
+                     RISCV_HWPROBE_EXT_ZBC : 0;
+            value |= cfg->ext_zbkb ?
+                     RISCV_HWPROBE_EXT_ZBKB : 0;
+            value |= cfg->ext_zbkc ?
+                     RISCV_HWPROBE_EXT_ZBKC : 0;
+            value |= cfg->ext_zbkx ?
+                     RISCV_HWPROBE_EXT_ZBKX : 0;
+            value |= cfg->ext_zknd ?
+                     RISCV_HWPROBE_EXT_ZKND : 0;
+            value |= cfg->ext_zkne ?
+                     RISCV_HWPROBE_EXT_ZKNE : 0;
+            value |= cfg->ext_zknh ?
+                     RISCV_HWPROBE_EXT_ZKNH : 0;
+            value |= cfg->ext_zksed ?
+                     RISCV_HWPROBE_EXT_ZKSED : 0;
+            value |= cfg->ext_zksh ?
+                     RISCV_HWPROBE_EXT_ZKSH : 0;
+            value |= cfg->ext_zkt ?
+                     RISCV_HWPROBE_EXT_ZKT : 0;
+            value |= cfg->ext_zvbb ?
+                     RISCV_HWPROBE_EXT_ZVBB : 0;
+            value |= cfg->ext_zvbc ?
+                     RISCV_HWPROBE_EXT_ZVBC : 0;
+            value |= cfg->ext_zvkb ?
+                     RISCV_HWPROBE_EXT_ZVKB : 0;
+            value |= cfg->ext_zvkg ?
+                     RISCV_HWPROBE_EXT_ZVKG : 0;
+            value |= cfg->ext_zvkned ?
+                     RISCV_HWPROBE_EXT_ZVKNED : 0;
+            value |= cfg->ext_zvknha ?
+                     RISCV_HWPROBE_EXT_ZVKNHA : 0;
+            value |= cfg->ext_zvknhb ?
+                     RISCV_HWPROBE_EXT_ZVKNHB : 0;
+            value |= cfg->ext_zvksed ?
+                     RISCV_HWPROBE_EXT_ZVKSED : 0;
+            value |= cfg->ext_zvksh ?
+                     RISCV_HWPROBE_EXT_ZVKSH : 0;
+            value |= cfg->ext_zvkt ?
+                     RISCV_HWPROBE_EXT_ZVKT : 0;
+            value |= cfg->ext_zfh ?
+                     RISCV_HWPROBE_EXT_ZFH : 0;
+            value |= cfg->ext_zfhmin ?
+                     RISCV_HWPROBE_EXT_ZFHMIN : 0;
+            value |= cfg->ext_zihintntl ?
+                     RISCV_HWPROBE_EXT_ZIHINTNTL : 0;
+            value |= cfg->ext_zvfh ?
+                     RISCV_HWPROBE_EXT_ZVFH : 0;
+            value |= cfg->ext_zvfhmin ?
+                     RISCV_HWPROBE_EXT_ZVFHMIN : 0;
+            value |= cfg->ext_zfa ?
+                     RISCV_HWPROBE_EXT_ZFA : 0;
+            value |= cfg->ext_ztso ?
+                     RISCV_HWPROBE_EXT_ZTSO : 0;
+            value |= cfg->ext_zacas ?
+                     RISCV_HWPROBE_EXT_ZACAS : 0;
+            value |= cfg->ext_zicond ?
+                     RISCV_HWPROBE_EXT_ZICOND : 0;
             __put_user(value, &pair->value);
             break;
         case RISCV_HWPROBE_KEY_CPUPERF_0:
             __put_user(RISCV_HWPROBE_MISALIGNED_FAST, &pair->value);
+            break;
+        case RISCV_HWPROBE_KEY_ZICBOZ_BLOCK_SIZE:
+            value = cfg->ext_zicboz ? cfg->cboz_blocksize : 0;
+            __put_user(value, &pair->value);
             break;
         default:
             __put_user(-1, &pair->key);
@@ -9170,7 +9275,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
 #endif
 
         if (CPU_NEXT(first_cpu)) {
-            TaskState *ts = cpu->opaque;
+            TaskState *ts = get_task_state(cpu);
 
             if (ts->child_tidptr) {
                 put_user_u32(0, ts->child_tidptr);
@@ -9375,14 +9480,24 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
 #ifdef TARGET_NR_waitid
     case TARGET_NR_waitid:
         {
+            struct rusage ru;
             siginfo_t info;
-            info.si_pid = 0;
-            ret = get_errno(safe_waitid(arg1, arg2, &info, arg4, NULL));
-            if (!is_error(ret) && arg3 && info.si_pid != 0) {
-                if (!(p = lock_user(VERIFY_WRITE, arg3, sizeof(target_siginfo_t), 0)))
+
+            ret = get_errno(safe_waitid(arg1, arg2, (arg3 ? &info : NULL),
+                                        arg4, (arg5 ? &ru : NULL)));
+            if (!is_error(ret)) {
+                if (arg3) {
+                    p = lock_user(VERIFY_WRITE, arg3,
+                                  sizeof(target_siginfo_t), 0);
+                    if (!p) {
+                        return -TARGET_EFAULT;
+                    }
+                    host_to_target_siginfo(p, &info);
+                    unlock_user(p, arg3, sizeof(target_siginfo_t));
+                }
+                if (arg5 && host_to_target_rusage(arg5, &ru)) {
                     return -TARGET_EFAULT;
-                host_to_target_siginfo(p, &info);
-                unlock_user(p, arg3, sizeof(target_siginfo_t));
+                }
             }
         }
         return ret;
@@ -9644,7 +9759,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
 #ifdef TARGET_NR_pause /* not on alpha */
     case TARGET_NR_pause:
         if (!block_signals()) {
-            sigsuspend(&((TaskState *)cpu->opaque)->signal_mask);
+            sigsuspend(&get_task_state(cpu)->signal_mask);
         }
         return -TARGET_EINTR;
 #endif
@@ -10210,7 +10325,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
             sigset_t *set;
 
 #if defined(TARGET_ALPHA)
-            TaskState *ts = cpu->opaque;
+            TaskState *ts = get_task_state(cpu);
             /* target_to_host_old_sigset will bswap back */
             abi_ulong mask = tswapal(arg1);
             set = &ts->sigsuspend_mask;
@@ -10611,7 +10726,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
     case TARGET_NR_mprotect:
         arg1 = cpu_untagged_addr(cpu, arg1);
         {
-            TaskState *ts = cpu->opaque;
+            TaskState *ts = get_task_state(cpu);
             /* Special hack to detect libc making the stack executable.  */
             if ((arg3 & PROT_GROWSDOWN)
                 && arg1 >= ts->info->stack_limit
@@ -12018,7 +12133,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
                 unlock_user(target_grouplist, arg2,
                             gidsetsize * sizeof(target_id));
             }
-            return get_errno(setgroups(gidsetsize, grouplist));
+            return get_errno(sys_setgroups(gidsetsize, grouplist));
         }
     case TARGET_NR_fchown:
         return get_errno(fchown(arg1, low2highuid(arg2), low2highgid(arg3)));
@@ -12354,7 +12469,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
                 }
                 unlock_user(target_grouplist, arg2, 0);
             }
-            return get_errno(setgroups(gidsetsize, grouplist));
+            return get_errno(sys_setgroups(gidsetsize, grouplist));
         }
 #endif
 #ifdef TARGET_NR_fchown32
@@ -12774,7 +12889,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
       return do_set_thread_area(cpu_env, arg1);
 #elif defined(TARGET_M68K)
       {
-          TaskState *ts = cpu->opaque;
+          TaskState *ts = get_task_state(cpu);
           ts->tp_value = arg1;
           return 0;
       }
@@ -12788,7 +12903,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
         return do_get_thread_area(cpu_env, arg1);
 #elif defined(TARGET_M68K)
         {
-            TaskState *ts = cpu->opaque;
+            TaskState *ts = get_task_state(cpu);
             return ts->tp_value;
         }
 #else
@@ -12919,7 +13034,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
 #if defined(TARGET_NR_set_tid_address)
     case TARGET_NR_set_tid_address:
     {
-        TaskState *ts = cpu->opaque;
+        TaskState *ts = get_task_state(cpu);
         ts->child_tidptr = arg1;
         /* do not call host set_tid_address() syscall, instead return tid() */
 #ifdef QEMU_FIBERS
@@ -13897,41 +14012,45 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
 
 //// --- Begin LibAFL code ---
 
-struct libafl_mapinfo {
-    target_ulong start, end;
-    target_ulong offset;
-    const char* path;
-    int flags, is_priv;
-};
-IntervalTreeNode * libafl_maps_first(IntervalTreeRoot * map_info);
-IntervalTreeNode * libafl_maps_next(IntervalTreeNode *node, struct libafl_mapinfo* ret);
+#include "libafl/user.h"
 
 IntervalTreeNode * libafl_maps_first(IntervalTreeRoot * map_info) {
     return interval_tree_iter_first(map_info, 0, -1);
 }
 
-IntervalTreeNode * libafl_maps_next(IntervalTreeNode *node, struct libafl_mapinfo* ret) {
-    if (!node || !ret)
-        return NULL;
-    MapInfo *e = container_of(node, MapInfo, itree);
+IntervalTreeNode * libafl_maps_next(IntervalTreeNode *pageflags_maps_node, IntervalTreeRoot *proc_maps_root, struct libafl_mapinfo* ret) {
+    ret->is_valid = false;
 
-    if (h2g_valid(e->itree.start)) {
-        unsigned long min = e->itree.start;
-        unsigned long max = e->itree.last + 1;
+    if (!pageflags_maps_node || !ret) {
+        return NULL;
+    }
+
+    MapInfo *e;
+    IntervalTreeNode *proc_map_interval_node;
+
+    if (h2g_valid(pageflags_maps_node->start)) {
+        unsigned long min = pageflags_maps_node->start;
+        unsigned long max = pageflags_maps_node->last + 1;
         int flags = page_get_flags(h2g(min));
 
         max = h2g_valid(max - 1) ?
             max : (uintptr_t) g2h_untagged(GUEST_ADDR_MAX) + 1;
 
+        // I guess this is useless? we are walking the entire pageflags_root tree, so we should always have a valid node
         if (!page_check_range(h2g(min), max - min, flags)) {
-            return libafl_maps_next(interval_tree_iter_next(node, 0, -1), ret);
+            return libafl_maps_next(interval_tree_iter_next(pageflags_maps_node, 0, -1), proc_maps_root, ret);
         }
+
+        // Should we check for NULL? Not sure, but if an inteval is in pageflags, then it should be in proc_maps too
+        proc_map_interval_node = interval_tree_iter_first(proc_maps_root, min, min);
+        e = container_of(proc_map_interval_node, MapInfo, itree);
 
         int libafl_flags = 0;
         if (flags & PAGE_READ) libafl_flags |= PROT_READ;
         if (flags & PAGE_WRITE_ORG) libafl_flags |= PROT_WRITE;
         if (flags & PAGE_EXEC) libafl_flags |= PROT_EXEC;
 
+        ret->is_valid = true;
         ret->start = (target_ulong)h2g_nocheck(min);
         ret->end = (target_ulong)h2g_nocheck(max);
         ret->offset = (target_ulong)e->offset;
@@ -13939,9 +14058,9 @@ IntervalTreeNode * libafl_maps_next(IntervalTreeNode *node, struct libafl_mapinf
         ret->flags = libafl_flags;
         ret->is_priv = e->is_priv;
 
-        return interval_tree_iter_next(node, 0, -1);
+        return interval_tree_iter_next(pageflags_maps_node, 0, -1);
     } else {
-        return libafl_maps_next(interval_tree_iter_next(node, 0, -1), ret);
+        return libafl_maps_next(interval_tree_iter_next(pageflags_maps_node, 0, -1), proc_maps_root, ret);
     }
 }
 
@@ -13980,25 +14099,7 @@ abi_long do_syscall(CPUArchState *cpu_env, int num, abi_long arg1,
 
     //// --- Begin LibAFL code ---
 
-    bool skip_syscall = false;
-    struct libafl_pre_syscall_hook* h = libafl_pre_syscall_hooks;
-    while (h) {
-        // no null check
-        struct syshook_ret hook_ret = h->callback(h->data, num,
-                                                  (target_ulong)arg1,
-                                                  (target_ulong)arg2,
-                                                  (target_ulong)arg3,
-                                                  (target_ulong)arg4,
-                                                  (target_ulong)arg5,
-                                                  (target_ulong)arg6,
-                                                  (target_ulong)arg7,
-                                                  (target_ulong)arg8);
-        if (hook_ret.skip_syscall) {
-            skip_syscall = true;
-            ret = (abi_ulong)hook_ret.retval;
-        }
-        h = h->next;
-    }
+    bool skip_syscall = libafl_hook_syscall_pre_run(cpu_env, num, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, &ret);
     if (skip_syscall) goto after_syscall;
 
     //// --- End LibAFL code ---
@@ -14009,21 +14110,8 @@ abi_long do_syscall(CPUArchState *cpu_env, int num, abi_long arg1,
     //// --- Begin LibAFL code ---
 
 after_syscall:;
-    struct libafl_post_syscall_hook* p = libafl_post_syscall_hooks;
-    while (p) {
-        // no null check
-        ret = (abi_ulong)p->callback(p->data, (target_ulong)ret, num,
-                                      (target_ulong)arg1,
-                                      (target_ulong)arg2,
-                                      (target_ulong)arg3,
-                                      (target_ulong)arg4,
-                                      (target_ulong)arg5,
-                                      (target_ulong)arg6,
-                                      (target_ulong)arg7,
-                                      (target_ulong)arg8);
-        p = p->next;
-    }
-    
+    libafl_hook_syscall_post_run(num, arg1, arg2, arg3, arg4,
+                      arg5, arg6, arg7, arg8, &ret);
     //// --- End LibAFL code ---
 
     if (unlikely(qemu_loglevel_mask(LOG_STRACE))) {

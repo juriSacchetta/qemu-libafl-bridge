@@ -32,13 +32,34 @@ void cpu_loop(CPURISCVState *env)
     int trapnr;
     target_ulong ret;
 
+//// --- Begin LibAFL code ---
+
+    libafl_exit_signal_vm_start();
+
+//// --- End LibAFL code ---
+
     for (;;) {
+
+//// --- Begin LibAFL code ---
+
+        if (libafl_exit_asap()) return;
+
+//// --- End LibAFL code ---
+
         cpu_exec_start(cs);
         trapnr = cpu_exec(cs);
         cpu_exec_end(cs);
         process_queued_cpu_work(cs);
 
         switch (trapnr) {
+
+//// --- Begin LibAFL code ---
+
+        case EXCP_LIBAFL_EXIT:
+            return;
+
+//// --- End LibAFL code ---
+
         case EXCP_INTERRUPT:
             /* just indicate that signals should be handled asap */
             break;
@@ -97,7 +118,7 @@ void cpu_loop(CPURISCVState *env)
 void target_cpu_copy_regs(CPUArchState *env, struct target_pt_regs *regs)
 {
     CPUState *cpu = env_cpu(env);
-    TaskState *ts = cpu->opaque;
+    TaskState *ts = get_task_state(cpu);
     struct image_info *info = ts->info;
 
     env->pc = regs->sepc;

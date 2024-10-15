@@ -26,6 +26,12 @@
 #include <linux/kvm.h>
 #include "kvm-cpus.h"
 
+//// --- Begin LibAFL code ---
+
+#include "libafl/hooks/thread.h"
+
+//// --- End LibAFL code ---
+
 static void *kvm_vcpu_thread_fn(void *arg)
 {
     CPUState *cpu = arg;
@@ -33,14 +39,19 @@ static void *kvm_vcpu_thread_fn(void *arg)
 
     rcu_register_thread();
 
-    qemu_mutex_lock_iothread();
+    bql_lock();
     qemu_thread_get_self(cpu->thread);
     cpu->thread_id = qemu_get_thread_id();
-    cpu->neg.can_do_io = true;
     current_cpu = cpu;
 
     r = kvm_init_vcpu(cpu, &error_fatal);
     kvm_init_cpu_signals(cpu);
+
+//// --- Begin LibAFL code ---
+
+    libafl_hook_new_thread_run(cpu_env(cpu), cpu->thread_id);
+
+//// --- End LibAFL code ---
 
     /* signal CPU creation */
     cpu_thread_signal_created(cpu);
@@ -58,7 +69,7 @@ static void *kvm_vcpu_thread_fn(void *arg)
 
     kvm_destroy_vcpu(cpu);
     cpu_thread_signal_destroyed(cpu);
-    qemu_mutex_unlock_iothread();
+    bql_unlock();
     rcu_unregister_thread();
     return NULL;
 }

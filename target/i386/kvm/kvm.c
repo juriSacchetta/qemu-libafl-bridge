@@ -1650,6 +1650,13 @@ static int hyperv_init_vcpu(X86CPU *cpu)
         }
     }
 
+    /* Skip SynIC and VP_INDEX since they are hard deps already */
+    if (hyperv_feat_enabled(cpu, HYPERV_FEAT_STIMER) &&
+        hyperv_feat_enabled(cpu, HYPERV_FEAT_VAPIC) &&
+        hyperv_feat_enabled(cpu, HYPERV_FEAT_RUNTIME)) {
+        hyperv_x86_set_vmbus_recommended_features_enabled();
+    }
+
     return 0;
 }
 
@@ -1914,6 +1921,7 @@ int kvm_arch_init_vcpu(CPUState *cs)
         }
         case 0x1f:
             if (env->nr_dies < 2) {
+                cpuid_i--;
                 break;
             }
             /* fallthrough */
@@ -1922,10 +1930,6 @@ int kvm_arch_init_vcpu(CPUState *cs)
         case 0xd:
             for (j = 0; ; j++) {
                 if (i == 0xd && j == 64) {
-                    break;
-                }
-
-                if (i == 0x1f && j == 64) {
                     break;
                 }
 
@@ -1954,7 +1958,6 @@ int kvm_arch_init_vcpu(CPUState *cs)
                 c = &cpuid_data.entries[cpuid_i++];
             }
             break;
-        case 0x7:
         case 0x12:
             for (j = 0; ; j++) {
                 c->function = i;
@@ -1974,6 +1977,7 @@ int kvm_arch_init_vcpu(CPUState *cs)
                 c = &cpuid_data.entries[cpuid_i++];
             }
             break;
+        case 0x7:
         case 0x14:
         case 0x1d:
         case 0x1e: {
@@ -3643,6 +3647,10 @@ static int kvm_get_sregs(X86CPU *cpu)
     env->cr[4] = sregs.cr4;
 
     env->efer = sregs.efer;
+    if (sev_es_enabled() && env->efer & MSR_EFER_LME &&
+        env->cr[0] & CR0_PG_MASK) {
+        env->efer |= MSR_EFER_LMA;
+    }
 
     /* changes to apic base and cr8/tpr are read back via kvm_arch_post_run */
     x86_update_hflags(env);
@@ -3682,6 +3690,10 @@ static int kvm_get_sregs2(X86CPU *cpu)
     env->cr[4] = sregs.cr4;
 
     env->efer = sregs.efer;
+    if (sev_es_enabled() && env->efer & MSR_EFER_LME &&
+        env->cr[0] & CR0_PG_MASK) {
+        env->efer |= MSR_EFER_LMA;
+    }
 
     env->pdptrs_valid = sregs.flags & KVM_SREGS2_FLAGS_PDPTRS_VALID;
 
@@ -4705,9 +4717,9 @@ void kvm_arch_pre_run(CPUState *cpu, struct kvm_run *run)
     /* Inject NMI */
     if (cpu->interrupt_request & (CPU_INTERRUPT_NMI | CPU_INTERRUPT_SMI)) {
         if (cpu->interrupt_request & CPU_INTERRUPT_NMI) {
-            qemu_mutex_lock_iothread();
+            bql_lock();
             cpu->interrupt_request &= ~CPU_INTERRUPT_NMI;
-            qemu_mutex_unlock_iothread();
+            bql_unlock();
             DPRINTF("injected NMI\n");
             ret = kvm_vcpu_ioctl(cpu, KVM_NMI);
             if (ret < 0) {
@@ -4716,9 +4728,9 @@ void kvm_arch_pre_run(CPUState *cpu, struct kvm_run *run)
             }
         }
         if (cpu->interrupt_request & CPU_INTERRUPT_SMI) {
-            qemu_mutex_lock_iothread();
+            bql_lock();
             cpu->interrupt_request &= ~CPU_INTERRUPT_SMI;
-            qemu_mutex_unlock_iothread();
+            bql_unlock();
             DPRINTF("injected SMI\n");
             ret = kvm_vcpu_ioctl(cpu, KVM_SMI);
             if (ret < 0) {
@@ -4729,7 +4741,7 @@ void kvm_arch_pre_run(CPUState *cpu, struct kvm_run *run)
     }
 
     if (!kvm_pic_in_kernel()) {
-        qemu_mutex_lock_iothread();
+        bql_lock();
     }
 
     /* Force the VCPU out of its inner loop to process any INIT requests
@@ -4782,7 +4794,7 @@ void kvm_arch_pre_run(CPUState *cpu, struct kvm_run *run)
         DPRINTF("setting tpr\n");
         run->cr8 = cpu_get_apic_tpr(x86_cpu->apic_state);
 
-        qemu_mutex_unlock_iothread();
+        bql_unlock();
     }
 }
 
@@ -4830,12 +4842,12 @@ MemTxAttrs kvm_arch_post_run(CPUState *cpu, struct kvm_run *run)
     /* We need to protect the apic state against concurrent accesses from
      * different threads in case the userspace irqchip is used. */
     if (!kvm_irqchip_in_kernel()) {
-        qemu_mutex_lock_iothread();
+        bql_lock();
     }
     cpu_set_apic_tpr(x86_cpu->apic_state, run->cr8);
     cpu_set_apic_base(x86_cpu->apic_state, run->apic_base);
     if (!kvm_irqchip_in_kernel()) {
-        qemu_mutex_unlock_iothread();
+        bql_unlock();
     }
     return cpu_get_mem_attrs(env);
 }
@@ -5269,17 +5281,17 @@ int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
     switch (run->exit_reason) {
     case KVM_EXIT_HLT:
         DPRINTF("handle_hlt\n");
-        qemu_mutex_lock_iothread();
+        bql_lock();
         ret = kvm_handle_halt(cpu);
-        qemu_mutex_unlock_iothread();
+        bql_unlock();
         break;
     case KVM_EXIT_SET_TPR:
         ret = 0;
         break;
     case KVM_EXIT_TPR_ACCESS:
-        qemu_mutex_lock_iothread();
+        bql_lock();
         ret = kvm_handle_tpr_access(cpu);
-        qemu_mutex_unlock_iothread();
+        bql_unlock();
         break;
     case KVM_EXIT_FAIL_ENTRY:
         code = run->fail_entry.hardware_entry_failure_reason;
@@ -5305,9 +5317,9 @@ int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
         break;
     case KVM_EXIT_DEBUG:
         DPRINTF("kvm_exit_debug\n");
-        qemu_mutex_lock_iothread();
+        bql_lock();
         ret = kvm_handle_debug(cpu, &run->debug.arch);
-        qemu_mutex_unlock_iothread();
+        bql_unlock();
         break;
     case KVM_EXIT_HYPERV:
         ret = kvm_hv_handle_exit(cpu, &run->hyperv);
