@@ -59,6 +59,9 @@
 //// --- End LibAFL code ---
 #include "libafl/cpu.h"
 #include "libafl/user.h"
+#ifdef QEMU_FIBERS
+#include "libafl/fibers/fibers.h"
+#endif
 //// --- Begin LibAFL code ---
 
 #ifdef CONFIG_SEMIHOSTING
@@ -69,11 +72,6 @@
 #define AT_FLAGS_PRESERVE_ARGV0_BIT 0
 #define AT_FLAGS_PRESERVE_ARGV0 (1 << AT_FLAGS_PRESERVE_ARGV0_BIT)
 #endif
-
-#ifdef QEMU_FIBERS
-#include "fibers/fibers.h"
-#endif
-
 
 char *exec_path;
 char real_exec_path[PATH_MAX];

@@ -21,7 +21,7 @@
 #include "target_mman.h"
 
 #ifdef QEMU_FIBERS
-#include "fibers/fibers.h"
+#include "libafl/fibers/fibers.h"
 #endif
 
 struct syscallname {

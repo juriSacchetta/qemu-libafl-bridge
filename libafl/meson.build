@@ -33,3 +33,4 @@ specific_ss.add(when : 'CONFIG_USER_ONLY', if_true : [files(
                                                           'hooks/syscall.c',
                                                     )])
 
+subdir('fibers')

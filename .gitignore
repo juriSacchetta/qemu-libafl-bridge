@@ -24,6 +24,6 @@ GTAGS
 # --- Begin LibAFL code ---
 /.idea
 /compile_commands.json
-fibers/pth/build/
-fibers/pth/install/
+libafl/fibers/pth/build/
+libafl/fibers/pth/install/
 # --- End LibAFL code ---

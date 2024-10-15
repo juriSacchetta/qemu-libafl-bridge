@@ -16,7 +16,7 @@
 #endif
 
 #ifdef QEMU_FIBERS
-#include "fibers/fibers.h"
+#include "libafl/fibers/fibers.h"
 #endif
 
 struct libafl_breakpoint* libafl_qemu_breakpoints = NULL;

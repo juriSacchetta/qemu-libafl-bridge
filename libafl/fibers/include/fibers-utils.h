@@ -1,9 +1,5 @@
 #pragma once
 
-#include <pth.h>
-#include "fibers-types.h"
-#include "qemu/queue.h"
-
 #define GEN_SYSCALL_WRAPPER_SIGN(type, name, ...) type fibers_syscall_##name(__VA_ARGS__);
 
 // Uncomment the line below to enable debug output

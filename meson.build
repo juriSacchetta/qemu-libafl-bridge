@@ -3569,8 +3569,6 @@ endif
 common_ss.add(pagevary)
 specific_ss.add(files('page-vary-target.c'))
 
-subdir('fibers')
-
 subdir('backends')
 subdir('disas')
 subdir('migration')

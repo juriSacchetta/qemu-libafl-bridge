@@ -150,7 +150,7 @@
 #include "cpu_loop-common.h"
 
 #ifdef QEMU_FIBERS
-#include "fibers/fibers.h"
+#include "libafl/fibers/fibers.h"
 #endif
 
 #ifndef CLONE_IO
