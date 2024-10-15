@@ -17,7 +17,7 @@ if not pth_dep.found()
    run_command('sh', '-c', 'echo "Library not found, installing..."; ./pth/install_pth.sh')
    pth_dep = declare_dependency(
       include_directories: include_directories('./pth/install/include'),
-      link_args: ['-L./pth/install/lib', '-lpth']
+      link_args: ['-L' + meson.current_source_dir() + '/pth/install/lib', '-lpth']
    )
 endif
 
