@@ -325,8 +325,8 @@ pth_t pth_spawn(pth_attr_t attr, void *(*func)(void *), void *arg)
         pth_pqueue_insert(&pth_NQ, t->prio, t);
     }
 
-    t->qemu_cpu_ptr = qemu_cpu_ptr;
     pth_debug1("pth_spawn: leave");
+
     /* the returned thread id is just the pointer
        to the thread control block... */
     return t;

@@ -846,12 +846,9 @@ intern void pth_sched_eventmanager_sighandler(int sig)
     /* remember raised signal */
     sigaddset(&pth_sigraised, sig);
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-result"
     /* write signal to signal pipe in order to awake the select() */
     c = (int)sig;
     pth_sc(write)(pth_sigpipe[1], &c, sizeof(char));
-#pragma GCC diagnostic pop
     return;
 }
 
