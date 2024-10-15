@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../pth/pth.h"
+#include <pth.h>
 #include "qemu/osdep.h"
 #include "qemu/queue.h"
 

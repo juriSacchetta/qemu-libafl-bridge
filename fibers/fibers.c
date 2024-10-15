@@ -1,7 +1,7 @@
-#include "fibers.h"
-
-#include "pth/pth.h"
+#include <pth.h>
 #include "qemu/osdep.h"
+
+#include "fibers.h"
 #include "src/fibers-futex.h"
 #include "src/fibers-thread.h"
 #include "src/fibers-utils.h"

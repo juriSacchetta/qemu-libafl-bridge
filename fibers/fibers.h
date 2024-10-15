@@ -1,6 +1,7 @@
 #pragma once
 
-#include "pth/pth.h"
+#include <pth.h>
+
 #include "qemu.h"
 #include "qemu/osdep.h"
 #include "src/fibers-types.h"
