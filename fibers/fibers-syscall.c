@@ -6,9 +6,9 @@
 
 #include <pth.h>
 #include "fibers.h"
-#include "src/fibers-types.h"
-#include "src/fibers-thread.h"
-#include "src/fibers-utils.h"
+#include "include/fibers-types.h"
+#include "include/fibers-thread.h"
+#include "include/fibers-utils.h"
 
 extern void force_sig_env(CPUArchState *env, int sig);
 //TODO: check parametes 

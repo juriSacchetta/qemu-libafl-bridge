@@ -2,9 +2,9 @@
 #include "qemu/osdep.h"
 
 #include "fibers.h"
-#include "src/fibers-futex.h"
-#include "src/fibers-thread.h"
-#include "src/fibers-utils.h"
+#include "include/fibers-futex.h"
+#include "include/fibers-thread.h"
+#include "include/fibers-utils.h"
 
 void fibers_init(void)
 {
@@ -63,7 +63,7 @@ int libafl_qemu_run(void)
     {
         pth_attr_t attr = pth_attr_new();
         pth_attr_set(attr, PTH_ATTR_JOINABLE, 0);
-        fiber_stopped->thread = pth_spawn(attr, env_cpu(fiber_stopped->env), fibers_cpu_loop, fiber_stopped->env);
+        fiber_stopped->thread = pth_spawn(attr, fibers_cpu_loop, fiber_stopped->env);
         pth_attr_destroy(attr);
         fiber_stopped->stopped = false;
         fiber_stopped = NULL;
@@ -77,16 +77,6 @@ int libafl_qemu_run(void)
     {
         pth_abort(fiber_stopped->thread);
     }
-
-    // CPUState *some_cpu;
-    // printf("!!!!!!!!!!CPU!!!!!!!!!!!!!\n");
-    // CPU_FOREACH(some_cpu)
-    // {
-    //     printf("CPU: %p\n", some_cpu);
-    
-    // }
-    // printf("!!!!!!!!!!CPU!!!!!!!!!!!!!\n");
-
     return 0;
 }
 

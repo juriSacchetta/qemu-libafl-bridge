@@ -4,12 +4,8 @@
 
 #include "qemu.h"
 #include "qemu/osdep.h"
-#include "src/fibers-types.h"
-#include "src/fibers-utils.h"
-
-#ifndef QEMU_FIBERS
-#define QEMU_FIBERS
-#endif
+#include "include/fibers-types.h"
+#include "include/fibers-utils.h"
 
 typedef struct
 {
@@ -29,7 +25,7 @@ qemu_fiber *fibers_spawn(int tid, CPUArchState *cpu, void *(*func)(void *), void
 void fibers_exit(bool continue_execution);
 
 #ifdef AS_LIB
-int libafl_qemu_run(void);
+#include "libafl/cpu.h"
 void fibers_save_stopped_thread(CPUArchState *cpu);
 void fibers_restore_thread(int tid, CPUArchState *s);
 int fibers_get_tid_by_cpu(CPUArchState *cpu);

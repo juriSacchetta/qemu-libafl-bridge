@@ -1,9 +1,7 @@
 #!/bin/sh
 
 
-./configure --target-list="x86_64-linux-user" --disable-system --enable-pie --enable-user \
-    --enable-linux-user --disable-gtk --disable-sdl --disable-vnc --disable-strip \
-    --cc="clang"
+./configure --as-shared-lib --target-list="x86_64-linux-user" --disable-bsd-user --disable-docs --disable-tests --disable-tools --disable-fdt --disable-system --disable-docs
 
 #make clean
 

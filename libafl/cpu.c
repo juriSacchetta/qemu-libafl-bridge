@@ -17,11 +17,13 @@
 #include "libafl/hook.h"
 
 int gdb_write_register(CPUState* cpu, uint8_t* mem_buf, int reg);
-
 static __thread GByteArray* libafl_qemu_mem_buf = NULL;
 
 #ifdef CONFIG_USER_ONLY
-static __thread CPUArchState* libafl_qemu_env;
+#ifndef QEMU_FIBERS  
+static
+#endif
+__thread CPUArchState* libafl_qemu_env;
 #endif
 
 #ifndef CONFIG_USER_ONLY
@@ -150,11 +152,13 @@ __attribute__((weak)) int libafl_qemu_main(void)
     return 0;
 }
 
+#ifndef QEMU_FIBERS
 int libafl_qemu_run(void)
 {
     cpu_loop(libafl_qemu_env);
     return 1;
 }
+#endif
 
 void libafl_set_qemu_env(CPUArchState* env) { libafl_qemu_env = env; }
 #endif

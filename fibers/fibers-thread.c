@@ -1,7 +1,7 @@
-#include "src/fibers-thread.h"
 #include "fibers.h"
 #include "qemu/queue.h"
-#include "src/fibers-types.h"
+#include "include/fibers-thread.h"
+#include "include/fibers-types.h"
 
 struct qemu_fiber_list fiber_list_head;
 int fibers_count = BASE_FIBERS_TID;
@@ -13,7 +13,13 @@ void fibers_thread_init(void)
     memset(main, 0, sizeof(qemu_fiber));
     QLIST_INSERT_HEAD(&fiber_list_head, main, entry);
     main->fibers_tid = fibers_count;
-    main->thread = pth_init(NULL);
+    if(!pth_init())
+    {
+        //FIXME: Pass to use qemu_log (log.h)
+        fprintf(stderr, "PTH init failed\n");
+        exit(1);
+    }
+    //FIXME: main->thread = pth_init();
 }
 
 qemu_fiber *fibers_spawn(int tid, CPUArchState *cpu, void *(*func)(void *), void *arg)
@@ -24,7 +30,7 @@ qemu_fiber *fibers_spawn(int tid, CPUArchState *cpu, void *(*func)(void *), void
     pth_attr_t attr = pth_attr_new();
     pth_attr_set(attr, PTH_ATTR_JOINABLE, 0);
 
-    new->thread = pth_spawn(attr, env_cpu(cpu), func, arg);
+    new->thread = pth_spawn(attr, func, arg);
 
     pth_attr_destroy(attr);
 

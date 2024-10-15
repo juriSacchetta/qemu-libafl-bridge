@@ -5,8 +5,8 @@
 
 #include <pth.h>
 #include "fibers.h"
-#include "src/fibers-futex.h"
-#include "src/fibers-utils.h"
+#include "include/fibers-futex.h"
+#include "include/fibers-utils.h"
 
 #define FUTEX_BITSET_MATCH_ANY 0xffffffff
 
