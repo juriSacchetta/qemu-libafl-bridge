@@ -85,7 +85,7 @@ static void prepare_qemu_exit(CPUState* cpu, target_ulong next_pc)
     qemu_system_debug_request();
     cpu->stopped = true; // TODO check if still needed
 #endif
-#ifdef QEMU_FIBERS
+#if defined(QEMU_FIBERS) && defined(AS_LIB) 
     fibers_save_stopped_thread(cpu_env(cpu));
 #endif
     // in usermode, this may be called from the syscall hook, thus already out of the cpu_exec but still in the cpu_loop

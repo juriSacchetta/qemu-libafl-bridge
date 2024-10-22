@@ -47,11 +47,15 @@ void fibers_exit(bool continue_execution)
 {
     qemu_fiber *fiber = fibers_thread_by_pth(pth_self());
     assert(fiber != NULL);
+#ifdef AS_LIB
     if (!fiber->stopped)
     {
+#endif
         QLIST_REMOVE(fiber, entry);
         free(fiber);
+#ifdef AS_LIB
     }
+#endif
     if (!continue_execution)
         pth_exit(NULL);
 }
@@ -61,14 +65,18 @@ void fibers_thread_clear_all(void)
     qemu_fiber *current;
     QLIST_FOREACH(current, &fiber_list_head, entry)
     {
-        if (current->thread == pth_self() || current->stopped == true)
+        if (current->thread == pth_self())
             continue;
+        #ifdef AS_LIB
+        if (current->stopped == true)
+            continue;
+        #endif
         QLIST_REMOVE(current, entry);
         pth_abort(current->thread);
         free(current);
     }
 }
-
+#ifdef AS_LIB
 void fibers_restore_thread(int tid, CPUArchState *s)
 {
     qemu_fiber *current = fibers_thread_by_tid(tid);
@@ -79,7 +87,7 @@ void fibers_restore_thread(int tid, CPUArchState *s)
     }
     fibers_spawn(tid, s, fibers_cpu_loop, s);
 }
-
+#endif
 
 static void fibers_thread_print_all(void) __attribute__((used));
 static void fibers_thread_print_all(void)

@@ -171,9 +171,11 @@ void HELPER(exit_atomic)(CPUArchState *env)
     cpu_loop_exit_atomic(env_cpu(env), GETPC());
 }
 
+#ifdef QEMU_FIBERS
 extern void fibers_call_scheduler(void);
 
 void HELPER(fibers_scheduler)(void)
 {
     fibers_call_scheduler();
 }
+#endif

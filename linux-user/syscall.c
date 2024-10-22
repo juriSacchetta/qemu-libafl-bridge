@@ -11423,7 +11423,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
         {
             struct iovec *vec = lock_iovec(VERIFY_READ, arg2, arg3, 1);
             if (vec != NULL) {
-#if QEMU_FIBERS
+#ifdef QEMU_FIBERS
                 ret = get_errno(fibers_syscall_writev(arg1, vec, arg3));
 #else
                 ret = get_errno(safe_writev(arg1, vec, arg3));
