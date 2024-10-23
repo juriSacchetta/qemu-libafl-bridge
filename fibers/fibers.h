@@ -20,11 +20,10 @@ typedef struct
 
 void fibers_init(CPUState *cpu);
 void fibers_fork_end(bool child);
-qemu_fiber *fibers_spawn(int tid, CPUArchState *cpu, void *(*func)(void *), void *arg);
+qemu_fiber *fiber_spawn(int tid, CPUArchState *cpu, void *(*func)(void *), void *arg);
 void fiber_exit(bool continue_execution);
 
 #ifdef AS_LIB
-int libafl_qemu_run(void);
 void fibers_save_stopped_thread(CPUArchState *cpu);
 void fibers_restore_thread(int tid, CPUArchState *s);
 int fibers_get_tid_by_cpu(CPUArchState *cpu);

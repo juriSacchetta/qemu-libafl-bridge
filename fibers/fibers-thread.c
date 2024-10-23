@@ -16,7 +16,7 @@ void fibers_thread_init(CPUState *cpu)
     main->thread = pth_init(cpu);
 }
 
-qemu_fiber *fibers_spawn(int tid, CPUArchState *cpu, void *(*func)(void *), void *arg)
+qemu_fiber *fiber_spawn(int tid, CPUArchState *cpu, void *(*func)(void *), void *arg)
 {
     qemu_fiber *new = malloc(sizeof(qemu_fiber));
     memset(new, 0, sizeof(qemu_fiber));
@@ -109,6 +109,6 @@ void fiber_restore_thread(int tid, CPUArchState *s)
         current->env = s;
         return;
     }
-    fiber_spawn(NULL, tid, s, fibers_cpu_loop, s);
+    fiber_spawn(tid, s, fibers_cpu_loop, s);
 }
 #endif
