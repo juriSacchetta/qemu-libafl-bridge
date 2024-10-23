@@ -150,13 +150,11 @@ __attribute__((weak)) int libafl_qemu_main(void)
     return 0;
 }
 
-#ifndef QEMU_FIBERS
 int libafl_qemu_run(void)
 {
     cpu_loop(libafl_qemu_env);
     return 1;
 }
-#endif
 
 void libafl_set_qemu_env(CPUArchState* env) { libafl_qemu_env = env; }
 #endif

@@ -6,14 +6,36 @@
 struct qemu_fiber_list fiber_list_head;
 int fibers_count = BASE_FIBERS_TID;
 
-void fibers_thread_init(void)
+qemu_fiber *fibers_thread_by_pth(pth_t thread)
+{
+    qemu_fiber *current;
+    QLIST_FOREACH(current, &fiber_list_head, entry)
+    {
+        if (current->thread == thread)
+            return current;
+    }
+    return NULL;
+}
+
+qemu_fiber *fibers_thread_by_tid(int fibers_tid)
+{
+    qemu_fiber *current;
+    QLIST_FOREACH(current, &fiber_list_head, entry)
+    {
+        if (current->fibers_tid == fibers_tid)
+            return current;
+    }
+    return NULL;
+}
+
+void fibers_thread_init(CPUState *cpu)
 {
     QLIST_INIT(&fiber_list_head);
     qemu_fiber *main = malloc(sizeof(qemu_fiber));
     memset(main, 0, sizeof(qemu_fiber));
     QLIST_INSERT_HEAD(&fiber_list_head, main, entry);
     main->fibers_tid = fibers_count;
-    main->thread = pth_init(NULL);
+    main->thread = pth_init(cpu);
 }
 
 qemu_fiber *fibers_spawn(int tid, CPUArchState *cpu, void *(*func)(void *), void *arg)

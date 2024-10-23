@@ -11,7 +11,7 @@
 
 #if defined(CONFIG_USER_ONLY) && !defined(QEMU_FIBERS)
 #define THREAD_MODIFIER __thread
-#else
+#elif defined(CONFIG_USER_ONLY) && defined(QEMU_FIBERS)
 #define THREAD_MODIFIER
 #endif
 

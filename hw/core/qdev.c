@@ -50,6 +50,7 @@ const VMStateDescription *qdev_get_vmsd(DeviceState *dev)
     return dc->vmsd;
 }
 #ifndef QEMU_FIBERS
+//FIXME: I need to remove it just for the rcu power off, but I need to find a better solution
 static void bus_free_bus_child(BusChild *kid)
 {
     object_unref(OBJECT(kid->child));

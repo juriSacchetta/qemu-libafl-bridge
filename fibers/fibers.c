@@ -6,10 +6,10 @@
 #include "src/fibers-thread.h"
 #include "src/fibers-utils.h"
 
-void fibers_init(void)
+void fibers_init(CPUState *cpu)
 {
     fibers_futex_init();
-    fibers_thread_init();
+    fibers_thread_init(cpu);
 }
 
 void fibers_call_scheduler(void)

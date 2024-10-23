@@ -181,11 +181,7 @@ foreach target : target_dirs
   have_system = have_system or target.endswith('-softmmu')
 endforeach
 # Check if fibers are enabled
-have_qemu_fibers = false
-if have_linux_user and config_host.has_key('fibers') and config_host['fibers'] == 'yes'
-  add_project_arguments('-DQEMU_FIBERS', language: 'c')
-  have_qemu_fibers = true
-endif
+have_qemu_fibers = have_linux_user and config_host.has_key('FIBERS') and config_host['FIBERS'] == 'y'
 have_user = have_linux_user or have_bsd_user
 
 have_tools = get_option('tools') \

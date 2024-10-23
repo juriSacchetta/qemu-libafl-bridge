@@ -26,7 +26,7 @@ size_t libafl_add_new_thread_hook(bool (*callback)(uint64_t data,
 
 bool libafl_hook_new_thread_run(CPUArchState* env, uint32_t tid)
 {
-#ifdef CONFIG_USER_ONLY
+#if defined(CONFIG_USER_ONLY) && defined(AS_LIB) 
     libafl_set_qemu_env(env);
 #endif
 

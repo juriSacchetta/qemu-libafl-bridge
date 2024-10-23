@@ -765,6 +765,11 @@ for opt do
   ;;
   --gdb=*) gdb_bin="$optarg"
   ;;
+  --fibers)
+      fibers="yes"
+      CFLAGS="$CFLAGS -DQEMU_FIBERS=1"
+      CXXFLAGS="$CXXFLAGS -DQEMU_FIBERS=1"
+  ;;
 #### --- Begin LibAFL code ---
   --as-shared-lib)
       as_shared_lib="yes"
@@ -1638,6 +1643,10 @@ echo "NINJA=$ninja" >> $config_host_mak
 echo "EXESUF=$EXESUF" >> $config_host_mak
 if test "$default_targets" = "yes"; then
   echo "CONFIG_DEFAULT_TARGETS=y" >> $config_host_mak
+fi
+
+if test "$fibers" = "yes"; then
+  echo "FIBERS=y" >> $config_host_mak
 fi
 
 #### --- Begin LibAFL code ---

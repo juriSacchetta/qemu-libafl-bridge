@@ -6,10 +6,6 @@
 #include "src/fibers-types.h"
 #include "src/fibers-utils.h"
 
-#ifndef QEMU_FIBERS
-#define QEMU_FIBERS
-#endif
-
 typedef struct
 {
     CPUArchState *env;
@@ -22,7 +18,7 @@ typedef struct
     sigset_t sigmask;
 } new_thread_info;
 
-void fibers_init(void);
+void fibers_init(CPUState *cpu);
 void fibers_fork_end(bool child);
 qemu_fiber *fibers_spawn(int tid, CPUArchState *cpu, void *(*func)(void *), void *arg);
 void fibers_exit(bool continue_execution);

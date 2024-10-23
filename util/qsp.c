@@ -786,6 +786,7 @@ void qsp_report(size_t max, enum QSPSortBy sort_by,
 }
 
 #ifndef QEMU_FIBERS
+//FIXME: I disable this part of the code because it is not used in the project if the rcu is power off
 static void qsp_snapshot_destroy(QSPSnapshot *snap)
 {
     qht_iter(&snap->ht, qsp_ht_delete, NULL);
