@@ -1,17 +1,15 @@
 #include "fibers-types.h"
-#include "../fibers.h"
 #include "qemu/osdep.h"
-#include "qemu/queue.h"
 
 extern int fibers_count;
 
-void fibers_thread_init(CPUState *env_cpu);
+void fibers_thread_init(CPUState *cpu);
 void fibers_thread_clear_all(void);
-QLIST_HEAD(qemu_fiber_list, qemu_fiber);
+qemu_fiber *fiber_by_pth(pth_t thread);
+qemu_fiber *fiber_by_tid(int fiber_tid);
 
+QLIST_HEAD(qemu_fiber_list, qemu_fiber);
 extern struct qemu_fiber_list fiber_list_head;
-qemu_fiber *fibers_thread_by_pth(pth_t thread);
-qemu_fiber *fibers_thread_by_tid(int fibers_tid);
 
 #ifdef AS_LIB
 void *fibers_cpu_loop(void *arg);

@@ -8,8 +8,8 @@
 
 void fibers_init(CPUState *cpu)
 {
-    fibers_futex_init();
-    fibers_thread_init(cpu);
+   fibers_futex_init();
+   fibers_thread_init(cpu);
 }
 
 void fibers_call_scheduler(void)
@@ -18,7 +18,7 @@ void fibers_call_scheduler(void)
         pth_ctrl(PTH_CTRL_GETTHREADS_NEW | PTH_CTRL_GETTHREADS_READY | PTH_CTRL_GETTHREADS_SUSPENDED);
     if (available_threads > 0)
     {
-        FIBERS_LOG_DEBUG("Calling scheduler num: %d\n", random_number);
+        // FIBERS_LOG_DEBUG("Calling scheduler num: %d\n", random_number);
         pth_yield(NULL);
     }
 }
@@ -42,7 +42,7 @@ void *fibers_cpu_loop(void *arg)
 {
     CPUArchState *env = (CPUArchState *)arg;
     cpu_loop(env);
-    fibers_exit(false);
+    fiber_exit(false);
     return NULL;
 }
 
@@ -97,7 +97,7 @@ int fibers_get_tid_by_cpu(CPUArchState *cpu)
     {
         if (current->env == cpu)
         {
-            return current->fibers_tid;
+            return current->fiber_tid;
         }
     }
     return -1;
