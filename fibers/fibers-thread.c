@@ -1,7 +1,7 @@
-#include "src/fibers-thread.h"
-#include "fibers.h"
 #include "qemu/queue.h"
 #include "src/fibers-types.h"
+#include "src/fibers-thread.h"
+#include "fibers.h"
 
 struct qemu_fiber_list fiber_list_head;
 int fibers_count = BASE_FIBERS_TID;
@@ -12,7 +12,7 @@ void fibers_thread_init(void)
     qemu_fiber *main = malloc(sizeof(qemu_fiber));
     memset(main, 0, sizeof(qemu_fiber));
     QLIST_INSERT_HEAD(&fiber_list_head, main, entry);
-    main->fibers_tid = fibers_count;
+    main->fiber_tid = fibers_count;
     main->thread = pth_init();
 }
 
@@ -30,11 +30,11 @@ qemu_fiber *fibers_spawn(int tid, CPUArchState *cpu, void *(*func)(void *), void
 
     if (tid == -1)
     {
-        new->fibers_tid = ++fibers_count;
+        new->fiber_tid = ++fibers_count;
     }
     else
     {
-        new->fibers_tid = tid;
+        new->fiber_tid = tid;
     }
 
     new->env = cpu;
@@ -43,9 +43,9 @@ qemu_fiber *fibers_spawn(int tid, CPUArchState *cpu, void *(*func)(void *), void
     return new;
 }
 
-void fibers_exit(bool continue_execution)
+void fiber_exit(bool continue_execution)
 {
-    qemu_fiber *fiber = fibers_thread_by_pth(pth_self());
+    qemu_fiber *fiber = fiber_by_pth(pth_self());
     assert(fiber != NULL);
 #ifdef AS_LIB
     if (!fiber->stopped)
@@ -77,11 +77,32 @@ void fibers_thread_clear_all(void)
     }
 }
 
+qemu_fiber *fiber_by_pth(pth_t thread)
+{
+    qemu_fiber *current;
+    QLIST_FOREACH(current, &fiber_list_head, entry)
+    {
+        if (current->thread == thread)
+            return current;
+    }
+    return NULL;
+}
+
+qemu_fiber *fiber_by_tid(int fiber_tid)
+{
+    qemu_fiber *current;
+    QLIST_FOREACH(current, &fiber_list_head, entry)
+    {
+        if (current->fiber_tid == fiber_tid)
+            return current;
+    }
+    return NULL;
+}
 
 #ifdef AS_LIB
 void fiber_restore_thread(int tid, CPUArchState *s)
 {
-    qemu_fiber *current = fibers_thread_by_tid(tid);
+    qemu_fiber *current = fiber_by_tid(tid);
     if (current != NULL)
     {
         current->env = s;
@@ -101,14 +122,14 @@ static void fibers_thread_print_all(void)
     {
         if (current->env != NULL)
         {
-            fprintf(stderr, "Fiber   %d\n", current->fibers_tid);
+            fprintf(stderr, "Fiber   %d\n", current->fiber_tid);
             fprintf(stderr, "Thread  %p\n", current->thread);
             fprintf(stderr, "CPU     %p\n", current->env);
         }
         else
         {
             fprintf(stderr, "Main thread\n");
-            fprintf(stderr, "Fiber   %d\n", current->fibers_tid);
+            fprintf(stderr, "Fiber   %d\n", current->fiber_tid);
             fprintf(stderr, "Thread  %p\n", current->thread);
             fprintf(stderr, "CPU     %p\n", current->env);
         }
@@ -127,5 +148,6 @@ static void fibers_thread_print_all(void)
     fprintf(stderr, "Pth suspended threads:      %ld\n", pth_ctrl(PTH_CTRL_GETTHREADS_SUSPENDED));
     fprintf(stderr, "!!!!!!!!!!!!Fibers!!!!!!!!!!!!!!\n");
     fflush(stderr);
+    fiber_spawn(NULL, tid, s, fibers_cpu_loop, s);
 }
 #endif
