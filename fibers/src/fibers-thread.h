@@ -1,4 +1,5 @@
 #include "fibers-types.h"
+#include "../fibers.h"
 #include "qemu/osdep.h"
 
 extern int fibers_count;
@@ -13,8 +14,9 @@ extern struct qemu_fiber_list fiber_list_head;
 
 #ifdef AS_LIB
 void *fibers_cpu_loop(void *arg);
-inline qemu_fiber *fibers_spawn_cpu_loop(CPUArchState *cpu)
+void fiber_restore_thread(int tid, CPUArchState *s);
+inline qemu_fiber *fiber_spawn_cpu_loop(CPUArchState *cpu)
 {
-    return fibers_spawn(-1, cpu, fibers_cpu_loop, cpu);
+    return fiber_spawn(-1, cpu, fibers_cpu_loop, cpu);
 }
 #endif

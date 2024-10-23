@@ -6756,7 +6756,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
 #endif
         cpu->random_seed = qemu_guest_random_seed_thread_part1();
 #ifdef QEMU_FIBERS
-        ret = fibers_spawn(-1, info.env, clone_func, &info)->fiber_tid;
+        ret = fiber_spawn(-1, info.env, clone_func, &info)->fiber_tid;
         pth_sigmask(SIG_SETMASK, &info.sigmask, NULL);
         if (ret != -1) {
             /* Wait for the child to initialize.  */
@@ -14070,7 +14070,7 @@ abi_long do_syscall(CPUArchState *cpu_env, int num, abi_long arg1,
 {
     CPUState *cpu = env_cpu(cpu_env);
     abi_long ret;
-#ifdef QEMU_FIBERS
+#if defined(QEMU_FIBERS) && !defined(AS_LIB)
     fibers_call_scheduler();
 #endif
 #ifdef DEBUG_ERESTARTSYS

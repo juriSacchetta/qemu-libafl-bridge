@@ -33,8 +33,10 @@ void fibers_fork_end(bool child)
 }
 
 #ifdef AS_LIB
+#include "libafl/cpu.h"
+static bool initialized = false;
 qemu_fiber *fiber_stopped = NULL;
-extern __thread CPUArchState *libafl_qemu_env;
+extern CPUArchState *libafl_qemu_env;
 
 extern void cpu_loop(CPUArchState *env);
 
@@ -48,7 +50,7 @@ void *fibers_cpu_loop(void *arg)
 
 void fibers_save_stopped_thread(CPUArchState *cpu)
 {
-    fiber_stopped = fibers_thread_by_pth(pth_self());
+    fiber_stopped = fiber_by_pth(pth_self());
     fiber_stopped->stopped = true;
     fiber_stopped->env = cpu;
 }
@@ -59,7 +61,7 @@ static int check_exit_condition(void *arg)
 
 int libafl_qemu_run(void)
 {
-    if (fiber_stopped != NULL)
+    if ( likely(fiber_stopped != NULL))
     {
         pth_attr_t attr = pth_attr_new();
         pth_attr_set(attr, PTH_ATTR_JOINABLE, 0);
@@ -68,9 +70,14 @@ int libafl_qemu_run(void)
         fiber_stopped->stopped = false;
         fiber_stopped = NULL;
     }
+    else if(unlikely(!initialized))
+    {
+        fiber_spawn_cpu_loop(libafl_qemu_env);
+        initialized = true;
+    }
     else
     {
-        fibers_spawn_cpu_loop(libafl_qemu_env);
+        assert(false);
     }
     pth_wait(pth_event(PTH_EVENT_FUNC, check_exit_condition, NULL, pth_time(0, 500000)));
     if(fiber_stopped != NULL)
