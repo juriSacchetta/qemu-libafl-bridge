@@ -1564,6 +1564,7 @@ static abi_long do_ppoll(abi_long arg1, abi_long arg2, abi_long arg3,
         ret = get_errno(safe_ppoll(pfd, nfds, timeout_ts,
                                    set, SIGSET_T_SIZE));
 
+//FIXME: Manage signals
         if (set) {
             finish_sigsuspend_mask(ret);
         }
@@ -6604,7 +6605,6 @@ static void *clone_func(void *arg)
     cpu = env_cpu(env);
     thread_cpu = cpu;
     ts = get_task_state(cpu);
-    info->tid = sys_gettid();
     task_settid(ts);
     if (info->child_tidptr)
         put_user_u32(info->tid, info->child_tidptr);
@@ -6691,7 +6691,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         /* Grab a mutex so that thread setup appears atomic.  */
         pthread_mutex_lock(&clone_lock);
 
-        /*
+        /* FIXME: Should I use CF_PARALLEL also with co-routine?
          * If this is our first additional thread, we need to ensure we
          * generate code for parallel execution and flush old translations.
          * Do this now so that the copy gets CF_PARALLEL too.
@@ -7874,8 +7874,7 @@ static int do_sys_futex(int *uaddr, int op, int val,
 #endif /* HOST_LONG_BITS == 64 */
     g_assert_not_reached();
 }
-#endif
-#ifndef QEMU_FIBERS
+
 static int do_safe_futex(int *uaddr, int op, int val,
                          const struct timespec *timeout, int *uaddr2,
                          int val3)
@@ -9281,13 +9280,13 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
                 put_user_u32(0, ts->child_tidptr);
 #ifdef QEMU_FIBERS
                 fibers_syscall_futex(g2h(cpu, ts->child_tidptr), FUTEX_WAKE, INT_MAX, NULL, 0, NULL, 0);
+                //FIXME: I need that the tb_jmp_cache cause a memory leak, but if I do a free of this object also in not fiber case it cause a corruption in the heap. We need to study better the use of this struct
+                g_free(cpu->tb_jmp_cache);
 #else
                 do_sys_futex(g2h(cpu, ts->child_tidptr),
                              FUTEX_WAKE, INT_MAX, NULL, NULL, 0);
 #endif
             }
-
-            g_free(cpu->tb_jmp_cache);
 
             object_unparent(OBJECT(cpu));
             object_unref(OBJECT(cpu));
@@ -9325,7 +9324,6 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
         fibers_exit(true);
 #endif
         _exit(arg1);
-
         return 0; /* avoid warning */
     case TARGET_NR_read:
             if (arg2 == 0 && arg3 == 0) {
