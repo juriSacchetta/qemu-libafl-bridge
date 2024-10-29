@@ -41,7 +41,7 @@ static TCGOp *gen_tb_start(DisasContextBase *db, uint32_t cflags)
     TCGv_i32 count = NULL;
     TCGOp *icount_start_insn = NULL;
 
-#ifdef QEMU_FIBERS
+#if defined(QEMU_FIBERS) && !defined(AS_LIB) 
     gen_helper_fibers_scheduler();
 #endif
 
