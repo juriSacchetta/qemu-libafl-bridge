@@ -168,16 +168,16 @@ void fork_end(pid_t pid)
         /* Child processes created by fork() only have a single thread.
            Discard information about the parent threads.  */
         CPU_FOREACH_SAFE(cpu, next_cpu) {
-            if (cpu != thread_cpu) {
+            if (cpu != get_thread_cpu_ptr()) {
                 QTAILQ_REMOVE_RCU(&cpus_queue, cpu, node);
             }
         }
         qemu_init_cpu_list();
-        get_task_state(thread_cpu)->ts_tid = qemu_get_thread_id();
+        get_task_state(get_thread_cpu_ptr())->ts_tid = qemu_get_thread_id();
     } else {
         cpu_list_unlock();
     }
-    gdbserver_fork_end(thread_cpu, pid);
+    gdbserver_fork_end(get_thread_cpu_ptr(), pid);
     /*
      * qemu_init_cpu_list() reinitialized the child exclusive state, but we
      * also need to keep current_cpu consistent, so call end_exclusive() for
@@ -186,11 +186,24 @@ void fork_end(pid_t pid)
     end_exclusive();
 }
 
+#ifndef QEMU_FIBERS
 __thread CPUState *thread_cpu;
+CPUState* get_thread_cpu_ptr(void) {return thread_cpu;}
+void set_thread_cpu_ptr(CPUState *cpu) {thread_cpu = cpu}
+#else
+CPUState* get_thread_cpu_ptr(void);
+CPUState* get_thread_cpu_ptr(void) {
+    return ((CPUState **)pth_get_tls())[CPUSTATE_POSITION];
+}
+void set_thread_cpu_ptr(CPUState *cpu);
+void set_thread_cpu_ptr(CPUState *cpu) {
+    ((CPUState **)pth_get_tls())[CPUSTATE_POSITION] = cpu;
+}
+#endif
 
 bool qemu_cpu_is_self(CPUState *cpu)
 {
-    return thread_cpu == cpu;
+    return get_thread_cpu_ptr() == cpu;
 }
 
 void qemu_cpu_kick(CPUState *cpu)
@@ -202,7 +215,7 @@ void task_settid(TaskState *ts)
 {
     if (ts->ts_tid == 0) {
     #ifdef QEMU_FIBERS
-        ts->ts_tid = fibers_syscall_gettid();
+        ts->ts_tid = pth_gettid();
     #else
         ts->ts_tid = (pid_t)syscall(SYS_gettid);
     #endif
@@ -729,6 +742,10 @@ int main(int argc, char **argv, char **envp)
     unsigned long max_reserved_va;
     bool preserve_argv0;
 
+#ifdef QEMU_FIBERS
+    pth_init();
+#endif
+
     error_init(argv[0]);
     module_call_init(MODULE_INIT_TRACE);
     qemu_init_cpu_list();
@@ -850,11 +867,7 @@ int main(int argc, char **argv, char **envp)
     cpu = cpu_create(cpu_type);
     env = cpu_env(cpu);
     cpu_reset(cpu);
-    thread_cpu = cpu;
-
-#ifdef QEMU_FIBERS
-    fibers_init(thread_cpu);
-#endif
+    set_thread_cpu_ptr(cpu);
 
     /*
      * Reserving too much vm space via mmap can run into problems

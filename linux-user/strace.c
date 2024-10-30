@@ -21,7 +21,7 @@
 #include "target_mman.h"
 
 #ifdef QEMU_FIBERS
-#include "fibers/fibers.h"
+#include "fibers/pth/pth.h"
 #endif
 
 struct syscallname {
@@ -4202,7 +4202,7 @@ print_syscall(CPUArchState *cpu_env, int num,
         return;
     }
 #ifdef QEMU_FIBERS
-    fprintf(f, "tid: 0x%x cpu_ptr: %p ", fibers_syscall_gettid(), env_cpu(cpu_env));
+    fprintf(f, "tid: 0x%x cpu_ptr: %p ", pth_gettid(), env_cpu(cpu_env));
 #else
     fprintf(f, "%d ", getpid());
 #endif

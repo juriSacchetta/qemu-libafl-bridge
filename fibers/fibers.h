@@ -1,26 +1,18 @@
 #pragma once
 
 #include "pth/pth.h"
-#include "qemu.h"
 #include "qemu/osdep.h"
-#include "src/fibers-types.h"
+#include "exec/user/abitypes.h"
 #include "src/fibers-utils.h"
 
-typedef struct
-{
-    CPUArchState *env;
-    pth_mutex_t mutex;
-    pth_cond_t cond;
-    pth_t thread;
-    int tid;
-    abi_ulong child_tidptr;
-    abi_ulong parent_tidptr;
-    sigset_t sigmask;
-} new_thread_info;
+typedef struct {
+    CPUState *cpu;
+    void*(*func)(void*);
+    void *arg;
+} fiber_trampoline_args;
 
-void fibers_init(CPUState *cpu);
-void fibers_fork_end(bool child);
-qemu_fiber *fiber_spawn(int tid, CPUArchState *cpu, void *(*func)(void *), void *arg);
+#define qemu_fiber pth_t
+void *fiber_trampoline_set_cpu(void* arg);
 void fiber_exit(bool continue_execution);
 
 #ifdef AS_LIB

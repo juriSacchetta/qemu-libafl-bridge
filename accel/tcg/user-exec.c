@@ -129,7 +129,11 @@ bool handle_sigsegv_accerr_write(CPUState *cpu, sigset_t *old_set,
          * Fault caused by protection of cached translation, and the
          * currently executing TB was modified and must be exited immediately.
          */
+#ifndef QEMU_FIBERS
         sigprocmask(SIG_SETMASK, old_set, NULL);
+#else
+        pth_sigmask(SIG_SETMASK, old_set, 0);
+#endif
         cpu_loop_exit_noexc(cpu);
         /* NORETURN */
     default:

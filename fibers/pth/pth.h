@@ -47,8 +47,6 @@
 #include <sys/select.h>
 #include <stdint.h>
 
-#include "qemu/osdep.h"
-
 /* fallbacks for essential typedefs */
 #ifndef _PTHREAD_PRIVATE
 /* typedef int pid_t; */
@@ -422,9 +420,11 @@ typedef void *Sfdisc_t;
 
 #include <stdint.h>
 
-extern void pth_save_thread_cpu_addr(uintptr_t *addr);
+extern void*          pth_get_tls(void);
+extern void           pth_set_tls(void* tls);
+
     /* global functions */
-extern pth_t          pth_init(CPUState*);
+extern pth_t          pth_init(void);
 extern int            pth_kill(void);
 extern long           pth_ctrl(unsigned long, ...);
 extern long           pth_version(void);
@@ -438,7 +438,7 @@ extern int            pth_attr_get(pth_attr_t, int, ...);
 extern int            pth_attr_destroy(pth_attr_t);
 
     /* thread functions */
-extern pth_t          pth_spawn(pth_attr_t attr, CPUState *qemu_cpu_ptr, void *(*func)(void *), void *arg);
+extern pth_t          pth_spawn(pth_attr_t attr, void *(*func)(void *), void *arg);
 extern int            pth_once(pth_once_t *, void (*)(void *), void *);
 extern pth_t          pth_self(void);
 extern int            pth_suspend(pth_t);
@@ -533,6 +533,7 @@ extern ssize_t        pth_recvfrom_ev(int, void *, size_t, int, struct sockaddr 
 extern ssize_t        pth_sendto_ev(int, const void *, size_t, int, const struct sockaddr *, socklen_t, pth_event_t);
 
     /* standard replacement functions */
+extern int            pth_gettid(void);
 extern int            pth_nanosleep(const struct timespec *, struct timespec *);
 extern int            pth_usleep(unsigned int);
 extern unsigned int   pth_sleep(unsigned int);

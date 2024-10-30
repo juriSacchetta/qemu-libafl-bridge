@@ -157,7 +157,7 @@ void setup_rt_frame(int sig, struct target_sigaction *ka,
 {
     abi_ulong frame_addr;
     struct target_rt_sigframe *frame;
-    int is_fdpic = info_is_fdpic(get_task_state(thread_cpu)->info);
+    int is_fdpic = info_is_fdpic(get_task_state(get_thread_cpu_ptr())->info);
     abi_ulong handler = 0;
     abi_ulong handler_fdpic_GOT = 0;
     uint32_t ra;

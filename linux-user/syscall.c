@@ -152,6 +152,7 @@
 #ifdef QEMU_FIBERS
 #include "fibers/fibers.h"
 #endif
+#include "qemu/thread.h"
 
 #ifndef CLONE_IO
 #define CLONE_IO                0x80000000      /* Clone io context */
@@ -3457,7 +3458,7 @@ static abi_long do_accept4(int fd, abi_ulong target_addr,
         return -TARGET_EINVAL;
     }
 
-    if (!access_ok(thread_cpu, VERIFY_WRITE, target_addr, addrlen)) {
+    if (!access_ok(get_thread_cpu_ptr(), VERIFY_WRITE, target_addr, addrlen)) {
         return -TARGET_EFAULT;
     }
 
@@ -3493,7 +3494,7 @@ static abi_long do_getpeername(int fd, abi_ulong target_addr,
         return -TARGET_EINVAL;
     }
 
-    if (!access_ok(thread_cpu, VERIFY_WRITE, target_addr, addrlen)) {
+    if (!access_ok(get_thread_cpu_ptr(), VERIFY_WRITE, target_addr, addrlen)) {
         return -TARGET_EFAULT;
     }
 
@@ -3525,7 +3526,7 @@ static abi_long do_getsockname(int fd, abi_ulong target_addr,
         return -TARGET_EINVAL;
     }
 
-    if (!access_ok(thread_cpu, VERIFY_WRITE, target_addr, addrlen)) {
+    if (!access_ok(get_thread_cpu_ptr(), VERIFY_WRITE, target_addr, addrlen)) {
         return -TARGET_EFAULT;
     }
 
@@ -6566,21 +6567,17 @@ static abi_long do_prctl(CPUArchState *env, abi_long option, abi_long arg2,
 #define NEW_STACK_SIZE 0x40000
 #endif
 
-#ifdef QEMU_FIBERS
-static pth_mutex_t clone_lock = PTH_MUTEX_INIT;
-#else
-static pthread_mutex_t clone_lock = PTHREAD_MUTEX_INITIALIZER;
+static QemuMutex clone_lock = QEMU_MUTEX_INITIALIZER;
 typedef struct {
     CPUArchState *env;
-    pthread_mutex_t mutex;
-    pthread_cond_t cond;
-    pthread_t thread;
+    QemuMutex mutex;
+    QemuCond cond;
+    QemuThread thread;
     uint32_t tid;
     abi_ulong child_tidptr;
     abi_ulong parent_tidptr;
     sigset_t sigmask;
 } new_thread_info;
-#endif
 
 //// --- Begin LibAFL code ---
 
@@ -6594,16 +6591,20 @@ static void *clone_func(void *arg)
     CPUArchState *env;
     CPUState *cpu;
     TaskState *ts;
-#ifndef QEMU_FIBERS
+
     rcu_register_thread();
     tcg_register_thread();
+#ifndef QEMU_FIBERS
     info->tid = sys_gettid();
 #else
     info->tid = fiber_syscall(gettid)();
 #endif
     env = info->env;
     cpu = env_cpu(env);
-    thread_cpu = cpu;
+#ifdef QEMU_FIBERS
+    //pth_set_cpu(cpu);
+#endif
+    get_thread_cpu_ptr() = cpu;
     ts = get_task_state(cpu);
     task_settid(ts);
     if (info->child_tidptr)
@@ -6611,29 +6612,21 @@ static void *clone_func(void *arg)
     if (info->parent_tidptr)
         put_user_u32(info->tid, info->parent_tidptr);
     qemu_guest_random_seed_thread_part2(cpu->random_seed);
+    /* Enable signals.  */
 #ifdef QEMU_FIBERS
     pth_sigmask(SIG_SETMASK, &info->sigmask, NULL);
-    /* Signal to the parent that we're ready.  */
-    pth_mutex_acquire(&info->mutex, FALSE, NULL);
-    pth_cond_notify(&info->cond, TRUE);
-    pth_mutex_release(&info->mutex);
-
-    /* Wait until the parent has finished initializing the tls state.  */
-    pth_mutex_acquire(&clone_lock, FALSE, NULL);
-    pth_mutex_release(&clone_lock);
-
-    FIBERS_LOG_DEBUG("starting thread: 0x%d\n", info->tid);
 #else
-    /* Enable signals.  */
     sigprocmask(SIG_SETMASK, &info->sigmask, NULL);
-    /* Signal to the parent that we're ready.  */
-    pthread_mutex_lock(&info->mutex);
-    pthread_cond_broadcast(&info->cond);
-    pthread_mutex_unlock(&info->mutex);
-    /* Wait until the parent has finished initializing the tls state.  */
-    pthread_mutex_lock(&clone_lock);
-    pthread_mutex_unlock(&clone_lock);
 #endif
+
+    /* Signal to the parent that we're ready.  */
+    qemu_mutex_lock(&info->mutex);
+    qemu_cond_broadcast(&info->cond);
+    qemu_mutex_unlock(&info->mutex);
+    /* Wait until the parent has finished initializing the tls state.  */
+    qemu_mutex_lock(&clone_lock);
+    qemu_mutex_unlock(&clone_lock);
+
     //// --- Begin LibAFL code ---
 
     if (libafl_hook_new_thread_run(env, info->tid)) {
@@ -6658,11 +6651,10 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
                    abi_ulong child_tidptr)
 {
     CPUState *cpu = env_cpu(env);
-    int ret;
+    int ret = 0;
     TaskState *ts;
     CPUState *new_cpu;
     CPUArchState *new_env;
-    sigset_t sigmask;
 
     flags &= ~CLONE_IGNORED_FLAGS;
 
@@ -6673,9 +6665,6 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
     if (flags & CLONE_VM) {
         TaskState *parent_ts = get_task_state(cpu);
         new_thread_info info;
-#ifndef QEMU_FIBERS
-        pthread_attr_t attr;
-#endif
 
         if (((flags & CLONE_THREAD_FLAGS) != CLONE_THREAD_FLAGS) ||
             (flags & CLONE_INVALID_THREAD_FLAGS)) {
@@ -6685,17 +6674,14 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         ts = g_new0(TaskState, 1);
         init_task_state(ts);
 
-#ifdef QEMU_FIBERS
-        pth_mutex_acquire(&clone_lock, FALSE, NULL);
-#else
-        /* Grab a mutex so that thread setup appears atomic.  */
-        pthread_mutex_lock(&clone_lock);
+        qemu_mutex_lock(&clone_lock);
 
         /* FIXME: Should I use CF_PARALLEL also with co-routine?
          * If this is our first additional thread, we need to ensure we
          * generate code for parallel execution and flush old translations.
          * Do this now so that the copy gets CF_PARALLEL too.
          */
+#ifndef QEMU_FIBERS
         if (!(cpu->tcg_cflags & CF_PARALLEL)) {
             cpu->tcg_cflags |= CF_PARALLEL;
             tb_flush(cpu);
@@ -6722,17 +6708,9 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         }
 
         memset(&info, 0, sizeof(info));
-
-#ifdef QEMU_FIBERS
-        pth_mutex_init(&info.mutex);
-        pth_mutex_acquire(&info.mutex, FALSE, NULL);
-        pth_cond_init(&info.cond);
-#else
-        pthread_mutex_init(&info.mutex, NULL);
-        pthread_mutex_lock(&info.mutex);
-        pthread_cond_init(&info.cond, NULL);
-#endif
-
+        qemu_mutex_init(&info.mutex);
+        qemu_mutex_lock(&info.mutex);
+        qemu_cond_init(&info.cond);
         info.env = new_env;
         if (flags & CLONE_CHILD_SETTID) {
             info.child_tidptr = child_tidptr;
@@ -6740,52 +6718,19 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         if (flags & CLONE_PARENT_SETTID) {
             info.parent_tidptr = parent_tidptr;
         }
-#ifdef QEMU_FIBERS
-        /* It is not safe to deliver signals until the child has finished
-           initializing, so temporarily block all signals.  */
-        sigfillset(&sigmask);
-        pth_sigmask(SIG_BLOCK, &sigmask, &info.sigmask);
-#else
-        ret = pthread_attr_init(&attr);
-        ret = pthread_attr_setstacksize(&attr, NEW_STACK_SIZE);
-        ret = pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-        /* It is not safe to deliver signals until the child has finished
-           initializing, so temporarily block all signals.  */
-        sigfillset(&sigmask);
-        sigprocmask(SIG_BLOCK, &sigmask, &info.sigmask);
-#endif
-        cpu->random_seed = qemu_guest_random_seed_thread_part1();
-#ifdef QEMU_FIBERS
-        ret = fiber_spawn(-1, info.env, clone_func, &info)->fiber_tid;
-        pth_sigmask(SIG_SETMASK, &info.sigmask, NULL);
-        if (ret != -1) {
-            /* Wait for the child to initialize.  */
-            pth_cond_await(&info.cond, &info.mutex, NULL);
-        }
 
-        pth_mutex_release(&info.mutex);
-        /*TODO
-        free(&info.cond);
-        free(&info.mutex);
-        */
-        pth_mutex_release(&clone_lock);
-#else
-        ret = pthread_create(&info.thread, &attr, clone_func, &info);
-        /* TODO: Free new CPU state if thread creation failed.  */
-        sigprocmask(SIG_SETMASK, &info.sigmask, NULL);
-        pthread_attr_destroy(&attr);
-        if (ret == 0) {
-            /* Wait for the child to initialize.  */
-            pthread_cond_wait(&info.cond, &info.mutex);
-            ret = info.tid;
-        } else {
-            ret = -1;
-        }
-        pthread_mutex_unlock(&info.mutex);
-        pthread_cond_destroy(&info.cond);
-        pthread_mutex_destroy(&info.mutex);
-        pthread_mutex_unlock(&clone_lock);
-#endif
+        cpu->random_seed = qemu_guest_random_seed_thread_part1();
+        //FIXME: To have a correct emulation it could be fail and return -1
+        qemu_thread_create(&info.thread, NULL, clone_func, &info, PTHREAD_CREATE_DETACHED);
+
+        /* Wait for the child to initialize.  */
+        qemu_cond_wait(&info.cond, &info.mutex);
+        ret = info.tid;
+
+        qemu_mutex_unlock(&info.mutex);
+        qemu_cond_destroy(&info.cond);
+        qemu_mutex_destroy(&info.mutex);
+        qemu_mutex_unlock(&clone_lock);
     } else {
         /* if no CLONE_VM, we consider it is a fork */
         if (flags & CLONE_INVALID_FORK_FLAGS) {
@@ -6815,7 +6760,6 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         fork_start();
 #ifdef QEMU_FIBERS
         ret = pth_fork();
-        FIBERS_LOG_DEBUG("Do a fork with fibers =  %d\n", ret);
 #else
         ret = fork();
 #endif
@@ -6823,9 +6767,6 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
             /* Child Process.  */
             cpu_clone_regs_child(env, newsp, flags);
             fork_end(ret);
-#ifdef QEMU_FIBERS
-            fibers_fork_end(1);
-#endif
             /* There is a race condition here.  The parent process could
                theoretically read the TID in the child process before the child
                tid is set.  This would require using either ptrace
@@ -9270,11 +9211,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
             return -QEMU_ERESTARTSYS;
         }
 
-#ifdef QEMU_FIBERS
-        pth_mutex_acquire(&clone_lock, FALSE, NULL);
-#else
-        pthread_mutex_lock(&clone_lock);
-#endif
+        qemu_mutex_lock(&clone_lock);
 
         if (CPU_NEXT(first_cpu)) {
             TaskState *ts = get_task_state(cpu);
@@ -9282,7 +9219,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
             if (ts->child_tidptr) {
                 put_user_u32(0, ts->child_tidptr);
                 //FIXME: I need that the tb_jmp_cache cause a memory leak, but if I do a free of this object also in not fiber case it cause a corruption in the heap. We need to study better the use of this struct
-                g_free(cpu->tb_jmp_cache);
+                //g_free(cpu->tb_jmp_cache);
                 do_sys_futex(g2h(cpu, ts->child_tidptr),
                              FUTEX_WAKE, INT_MAX, NULL, NULL, 0);
             }
@@ -9295,27 +9232,19 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
              * data without the lock held.
              */
 
-#ifdef QEMU_FIBERS
-            pth_mutex_release(&clone_lock);
-#else
-            pthread_mutex_unlock(&clone_lock);
-#endif
+            qemu_mutex_unlock(&clone_lock);
 
-            thread_cpu = NULL;
+            get_thread_cpu_ptr() = NULL;
             g_free(ts);
 #ifdef QEMU_FIBERS
             fiber_exit(false);
 #else
-            rcu_unregister_thread();
             pthread_exit(NULL);
 #endif
+            rcu_unregister_thread();
         }
 
-#ifdef QEMU_FIBERS
-        pth_mutex_release(&clone_lock);
-#else
-        pthread_mutex_unlock(&clone_lock);
-#endif
+        qemu_mutex_unlock(&clone_lock);
 
         preexit_cleanup(cpu_env, arg1);
 

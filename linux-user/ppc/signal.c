@@ -486,7 +486,7 @@ void setup_rt_frame(int sig, struct target_sigaction *ka,
     int i, err = 0;
 #if defined(TARGET_PPC64)
     struct target_sigcontext *sc = 0;
-    struct image_info *image = get_task_state(thread_cpu)->info;
+    struct image_info *image = get_task_state(get_thread_cpu_ptr())->info;
 #endif
 
     rt_sf_addr = get_sigframe(ka, env, sizeof(*rt_sf));
@@ -673,7 +673,7 @@ abi_long do_swapcontext(CPUArchState *env, abi_ulong uold_ctx,
     }
 
     if (uold_ctx) {
-        TaskState *ts = get_task_state(thread_cpu);
+        TaskState *ts = get_task_state(get_thread_cpu_ptr());
 
         if (!lock_user_struct(VERIFY_WRITE, uctx, uold_ctx, 1)) {
             return -TARGET_EFAULT;

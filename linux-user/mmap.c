@@ -121,7 +121,7 @@ static int validate_prot_to_pageflags(int prot)
 
 #ifdef TARGET_AARCH64
     {
-        ARMCPU *cpu = ARM_CPU(thread_cpu);
+        ARMCPU *cpu = ARM_CPU(get_thread_cpu_ptr());
 
         /*
          * The PROT_BTI bit is only accepted if the cpu supports the feature.
@@ -958,7 +958,7 @@ abi_long target_mmap(abi_ulong start, abi_ulong len, int target_prot,
      * be atomic with respect to an external process.
      */
     if (ret != -1 && (flags & MAP_TYPE) != MAP_PRIVATE) {
-        CPUState *cpu = thread_cpu;
+        CPUState *cpu = get_thread_cpu_ptr();
         if (!(cpu->tcg_cflags & CF_PARALLEL)) {
             cpu->tcg_cflags |= CF_PARALLEL;
             tb_flush(cpu);

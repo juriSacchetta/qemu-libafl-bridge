@@ -34,6 +34,10 @@
 #include "user/safe-syscall.h"
 #include "tcg/tcg.h"
 
+
+#ifdef QEMU_FIBERS
+#include "fibers/pth/pth.h"
+#endif
 //// --- Begin LibAFL code ---
 
 #include "libafl/user.h"
@@ -184,7 +188,7 @@ void target_to_host_old_sigset(sigset_t *sigset,
 
 int block_signals(void)
 {
-    TaskState *ts = get_task_state(thread_cpu);
+    TaskState *ts = get_task_state(get_thread_cpu_ptr());
     sigset_t set;
 
     /* It's OK to block everything including SIGSEGV, because we won't
@@ -192,7 +196,11 @@ int block_signals(void)
      * process_pending_signals().
      */
     sigfillset(&set);
+#ifndef QEMU_FIBERS
     sigprocmask(SIG_SETMASK, &set, 0);
+#else
+    pth_sigmask(SIG_SETMASK, &set, 0);
+#endif
 
     return qatomic_xchg(&ts->signal_pending, 1);
 }
@@ -206,7 +214,7 @@ int block_signals(void)
  */
 int do_sigprocmask(int how, const sigset_t *set, sigset_t *oldset)
 {
-    TaskState *ts = get_task_state(thread_cpu);
+    TaskState *ts = get_task_state(get_thread_cpu_ptr());
 
     if (oldset) {
         *oldset = ts->signal_mask;
@@ -249,7 +257,7 @@ int do_sigprocmask(int how, const sigset_t *set, sigset_t *oldset)
  */
 void set_sigmask(const sigset_t *set)
 {
-    TaskState *ts = get_task_state(thread_cpu);
+    TaskState *ts = get_task_state(get_thread_cpu_ptr());
 
     ts->signal_mask = *set;
 }
@@ -258,7 +266,7 @@ void set_sigmask(const sigset_t *set)
 
 int on_sig_stack(unsigned long sp)
 {
-    TaskState *ts = get_task_state(thread_cpu);
+    TaskState *ts = get_task_state(get_thread_cpu_ptr());
 
     return (sp - ts->sigaltstack_used.ss_sp
             < ts->sigaltstack_used.ss_size);
@@ -266,7 +274,7 @@ int on_sig_stack(unsigned long sp)
 
 int sas_ss_flags(unsigned long sp)
 {
-    TaskState *ts = get_task_state(thread_cpu);
+    TaskState *ts = get_task_state(get_thread_cpu_ptr());
 
     return (ts->sigaltstack_used.ss_size == 0 ? SS_DISABLE
             : on_sig_stack(sp) ? SS_ONSTACK : 0);
@@ -277,7 +285,7 @@ abi_ulong target_sigsp(abi_ulong sp, struct target_sigaction *ka)
     /*
      * This is the X/Open sanctioned signal stack switching.
      */
-    TaskState *ts = get_task_state(thread_cpu);
+    TaskState *ts = get_task_state(get_thread_cpu_ptr());
 
     if ((ka->sa_flags & TARGET_SA_ONSTACK) && !sas_ss_flags(sp)) {
         return ts->sigaltstack_used.ss_sp + ts->sigaltstack_used.ss_size;
@@ -287,7 +295,7 @@ abi_ulong target_sigsp(abi_ulong sp, struct target_sigaction *ka)
 
 void target_save_altstack(target_stack_t *uss, CPUArchState *env)
 {
-    TaskState *ts = get_task_state(thread_cpu);
+    TaskState *ts = get_task_state(get_thread_cpu_ptr());
 
     __put_user(ts->sigaltstack_used.ss_sp, &uss->ss_sp);
     __put_user(sas_ss_flags(get_sp_from_cpustate(env)), &uss->ss_flags);
@@ -296,7 +304,7 @@ void target_save_altstack(target_stack_t *uss, CPUArchState *env)
 
 abi_long target_restore_altstack(target_stack_t *uss, CPUArchState *env)
 {
-    TaskState *ts = get_task_state(thread_cpu);
+    TaskState *ts = get_task_state(get_thread_cpu_ptr());
     size_t minstacksize = TARGET_MINSIGSTKSZ;
     target_stack_t ss;
 
@@ -583,7 +591,7 @@ static void signal_table_init(void)
 
 void signal_init(void)
 {
-    TaskState *ts = get_task_state(thread_cpu);
+    TaskState *ts = get_task_state(get_thread_cpu_ptr());
     struct sigaction act, oact;
 
     /* initialize signal conversion tables */
@@ -634,7 +642,7 @@ void signal_init(void)
  */
 void force_sig(int sig)
 {
-    CPUState *cpu = thread_cpu;
+    CPUState *cpu = get_thread_cpu_ptr();
     target_siginfo_t info = {};
 
     info.si_signo = sig;
@@ -667,7 +675,7 @@ void force_sig_env(CPUArchState *env, int sig)
  */
 void force_sig_fault(int sig, int code, abi_ulong addr)
 {
-    CPUState *cpu = thread_cpu;
+    CPUState *cpu = get_thread_cpu_ptr();
     target_siginfo_t info = {};
 
     info.si_signo = sig;
@@ -963,7 +971,11 @@ static void host_sigsegv_handler(CPUState *cpu, siginfo_t *info,
         }
     }
 
+#ifndef QEMU_FIBERS
     sigprocmask(SIG_SETMASK, host_signal_mask(uc), NULL);
+#else
+    pth_sigmask(SIG_SETMASK, host_signal_mask(uc), 0);
+#endif
     cpu_loop_exit_sigsegv(cpu, guest_addr, access_type, maperr, pc);
 }
 
@@ -986,7 +998,11 @@ static uintptr_t host_sigbus_handler(CPUState *cpu, siginfo_t *info,
         uintptr_t host_addr = (uintptr_t)info->si_addr;
         abi_ptr guest_addr = h2g_nocheck(host_addr);
 
+    #ifndef QEMU_FIBERS
         sigprocmask(SIG_SETMASK, host_signal_mask(uc), NULL);
+    #else
+        pth_sigmask(SIG_SETMASK, host_signal_mask(uc), 0);
+    #endif
         cpu_loop_exit_sigbus(cpu, guest_addr, access_type, pc);
     }
     return pc;
@@ -1000,7 +1016,7 @@ static uintptr_t host_sigbus_handler(CPUState *cpu, siginfo_t *info,
 /* int libafl_qemu_is_tb_protected_write(int host_sig, siginfo_t *info,
                                       host_sigcontext *uc)
 {
-    CPUState *cpu = thread_cpu;
+    CPUState *cpu = get_thread_cpu_ptr();
     uintptr_t host_addr = (uintptr_t)info->si_addr;
 
     bool is_valid = h2g_valid(host_addr);
@@ -1023,7 +1039,7 @@ static uintptr_t host_sigbus_handler(CPUState *cpu, siginfo_t *info,
 //// --- End LibAFL code ---
 void host_signal_handler(int host_sig, siginfo_t *info, void *puc)
 {
-    CPUState *cpu = thread_cpu;
+    CPUState *cpu = get_thread_cpu_ptr();
     CPUArchState *env = cpu_env(cpu);
     TaskState *ts = get_task_state(cpu);
     target_siginfo_t tinfo;
@@ -1100,7 +1116,7 @@ void host_signal_handler(int host_sig, siginfo_t *info, void *puc)
     sigdelset(sigmask, SIGBUS);
 
     /* interrupt the virtual CPU as soon as possible */
-    cpu_exit(thread_cpu);
+    cpu_exit(get_thread_cpu_ptr());
 }
 
 /* do_sigaltstack() returns target values and errnos. */
@@ -1360,7 +1376,12 @@ void process_pending_signals(CPUArchState *cpu_env)
 
     while (qatomic_read(&ts->signal_pending)) {
         sigfillset(&set);
+
+#ifndef QEMU_FIBERS
         sigprocmask(SIG_SETMASK, &set, 0);
+#else
+        pth_sigmask(SIG_SETMASK, &set, 0);
+#endif
 
     restart_scan:
         sig = ts->sync_signal.pending;
@@ -1406,7 +1427,11 @@ void process_pending_signals(CPUArchState *cpu_env)
         set = ts->signal_mask;
         sigdelset(&set, SIGSEGV);
         sigdelset(&set, SIGBUS);
+#ifndef QEMU_FIBERS
         sigprocmask(SIG_SETMASK, &set, 0);
+#else
+        pth_sigmask(SIG_SETMASK, &set, 0);
+#endif
     }
     ts->in_sigsuspend = 0;
 }
@@ -1414,7 +1439,7 @@ void process_pending_signals(CPUArchState *cpu_env)
 int process_sigsuspend_mask(sigset_t **pset, target_ulong sigset,
                             target_ulong sigsize)
 {
-    TaskState *ts = get_task_state(thread_cpu);
+    TaskState *ts = get_task_state(get_thread_cpu_ptr());
     sigset_t *host_set = &ts->sigsuspend_mask;
     target_sigset_t *target_sigset;
 

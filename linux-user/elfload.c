@@ -155,7 +155,7 @@ typedef abi_int         target_pid_t;
 
 static uint32_t get_elf_hwcap(void)
 {
-    X86CPU *cpu = X86_CPU(thread_cpu);
+    X86CPU *cpu = X86_CPU(get_thread_cpu_ptr());
 
     return cpu->env.features[FEAT_1_EDX];
 }
@@ -254,7 +254,7 @@ static bool init_guest_commpage(void)
 static const char *get_elf_platform(void)
 {
     static char elf_platform[] = "i386";
-    int family = object_property_get_int(OBJECT(thread_cpu), "family", NULL);
+    int family = object_property_get_int(OBJECT(get_thread_cpu_ptr()), "family", NULL);
     if (family > 6) {
         family = 6;
     }
@@ -459,7 +459,7 @@ enum {
 
 static bool init_guest_commpage(void)
 {
-    ARMCPU *cpu = ARM_CPU(thread_cpu);
+    ARMCPU *cpu = ARM_CPU(get_thread_cpu_ptr());
     int host_page_size = qemu_real_host_page_size();
     abi_ptr commpage;
     void *want;
@@ -506,7 +506,7 @@ static bool init_guest_commpage(void)
 
 uint32_t get_elf_hwcap(void)
 {
-    ARMCPU *cpu = ARM_CPU(thread_cpu);
+    ARMCPU *cpu = ARM_CPU(get_thread_cpu_ptr());
     uint32_t hwcaps = 0;
 
     hwcaps |= ARM_HWCAP_ARM_SWP;
@@ -558,7 +558,7 @@ uint32_t get_elf_hwcap(void)
 
 uint64_t get_elf_hwcap2(void)
 {
-    ARMCPU *cpu = ARM_CPU(thread_cpu);
+    ARMCPU *cpu = ARM_CPU(get_thread_cpu_ptr());
     uint64_t hwcaps = 0;
 
     GET_FEATURE_ID(aa32_aes, ARM_HWCAP2_ARM_AES);
@@ -629,7 +629,7 @@ const char *elf_hwcap2_str(uint32_t bit)
 
 static const char *get_elf_platform(void)
 {
-    CPUARMState *env = cpu_env(thread_cpu);
+    CPUARMState *env = cpu_env(get_thread_cpu_ptr());
 
 #if TARGET_BIG_ENDIAN
 # define END  "b"
@@ -784,7 +784,7 @@ enum {
 
 uint32_t get_elf_hwcap(void)
 {
-    ARMCPU *cpu = ARM_CPU(thread_cpu);
+    ARMCPU *cpu = ARM_CPU(get_thread_cpu_ptr());
     uint32_t hwcaps = 0;
 
     hwcaps |= ARM_HWCAP_A64_FP;
@@ -824,7 +824,7 @@ uint32_t get_elf_hwcap(void)
 
 uint64_t get_elf_hwcap2(void)
 {
-    ARMCPU *cpu = ARM_CPU(thread_cpu);
+    ARMCPU *cpu = ARM_CPU(get_thread_cpu_ptr());
     uint64_t hwcaps = 0;
 
     GET_FEATURE_ID(aa64_dcpodp, ARM_HWCAP2_A64_DCPODP);
@@ -1071,7 +1071,7 @@ enum {
 
 static uint32_t get_elf_hwcap(void)
 {
-    PowerPCCPU *cpu = POWERPC_CPU(thread_cpu);
+    PowerPCCPU *cpu = POWERPC_CPU(get_thread_cpu_ptr());
     uint32_t features = 0;
 
     /* We don't have to be terribly complete here; the high points are
@@ -1107,7 +1107,7 @@ static uint32_t get_elf_hwcap(void)
 
 static uint32_t get_elf_hwcap2(void)
 {
-    PowerPCCPU *cpu = POWERPC_CPU(thread_cpu);
+    PowerPCCPU *cpu = POWERPC_CPU(get_thread_cpu_ptr());
     uint32_t features = 0;
 
 #define GET_FEATURE(flag, feature)                                      \
@@ -1143,7 +1143,7 @@ static uint32_t get_elf_hwcap2(void)
 #define DLINFO_ARCH_ITEMS       5
 #define ARCH_DLINFO                                     \
     do {                                                \
-        PowerPCCPU *cpu = POWERPC_CPU(thread_cpu);              \
+        PowerPCCPU *cpu = POWERPC_CPU(get_thread_cpu_ptr());              \
         /*                                              \
          * Handle glibc compatibility: these magic entries must \
          * be at the lowest addresses in the final auxv.        \
@@ -1276,7 +1276,7 @@ enum {
 
 static uint32_t get_elf_hwcap(void)
 {
-    LoongArchCPU *cpu = LOONGARCH_CPU(thread_cpu);
+    LoongArchCPU *cpu = LOONGARCH_CPU(get_thread_cpu_ptr());
     uint32_t hwcaps = 0;
 
     hwcaps |= HWCAP_LOONGARCH_CRC32;
@@ -1332,7 +1332,7 @@ static uint32_t get_elf_hwcap(void)
 
 static const char *get_elf_base_platform(void)
 {
-    MIPSCPU *cpu = MIPS_CPU(thread_cpu);
+    MIPSCPU *cpu = MIPS_CPU(get_thread_cpu_ptr());
 
     /* 64 bit ISAs goes first */
     MATCH_PLATFORM_INSN(CPU_MIPS64R6, "mips64r6");
@@ -1447,7 +1447,7 @@ enum {
 
 static uint32_t get_elf_hwcap(void)
 {
-    MIPSCPU *cpu = MIPS_CPU(thread_cpu);
+    MIPSCPU *cpu = MIPS_CPU(get_thread_cpu_ptr());
     uint32_t hwcaps = 0;
 
     GET_FEATURE_REG_EQU(CP0_Config0, CP0C0_AR, CP0C0_AR_LENGTH,
@@ -1706,7 +1706,7 @@ enum {
 
 static uint32_t get_elf_hwcap(void)
 {
-    SuperHCPU *cpu = SUPERH_CPU(thread_cpu);
+    SuperHCPU *cpu = SUPERH_CPU(get_thread_cpu_ptr());
     uint32_t hwcap = 0;
 
     hwcap |= SH_CPU_HAS_FPU;
@@ -1930,7 +1930,7 @@ static void elf_core_copy_regs(target_elf_gregset_t *regs,
 static uint32_t get_elf_hwcap(void)
 {
 #define MISA_BIT(EXT) (1 << (EXT - 'A'))
-    RISCVCPU *cpu = RISCV_CPU(thread_cpu);
+    RISCVCPU *cpu = RISCV_CPU(get_thread_cpu_ptr());
     uint32_t mask = MISA_BIT('I') | MISA_BIT('M') | MISA_BIT('A')
                     | MISA_BIT('F') | MISA_BIT('D') | MISA_BIT('C')
                     | MISA_BIT('V');
@@ -3465,7 +3465,7 @@ static void load_elf_image(const char *image_name, const ImageSource *src,
      */
     if ((info->note_flags & GNU_PROPERTY_AARCH64_FEATURE_1_BTI)
         && (pinterp_name == NULL || *pinterp_name == 0)
-        && cpu_isar_feature(aa64_bti, ARM_CPU(thread_cpu))) {
+        && cpu_isar_feature(aa64_bti, ARM_CPU(get_thread_cpu_ptr()))) {
         prot_exec |= TARGET_PROT_BTI;
     }
 #endif

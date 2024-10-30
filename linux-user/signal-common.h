@@ -111,7 +111,7 @@ int process_sigsuspend_mask(sigset_t **pset, target_ulong sigset,
 static inline void finish_sigsuspend_mask(int ret)
 {
     if (ret != -QEMU_ERESTARTSYS) {
-        TaskState *ts = get_task_state(thread_cpu);
+        TaskState *ts = get_task_state(get_thread_cpu_ptr());
         ts->in_sigsuspend = 1;
     }
 }

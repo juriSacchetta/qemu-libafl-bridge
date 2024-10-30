@@ -457,7 +457,7 @@ static void disable_gdbstub(CPUState *thread_cpu)
         /* no cpu_watchpoint_remove_all for user-mode */
         cpu_single_step(cpu, 0);
     }
-    tb_flush(thread_cpu);
+    tb_flush(get_thread_cpu_ptr());
 }
 
 void gdbserver_fork_end(CPUState *cpu, pid_t pid)

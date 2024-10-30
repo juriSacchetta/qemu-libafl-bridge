@@ -9,7 +9,7 @@ void *lock_user(int type, abi_ulong guest_addr, ssize_t len, bool copy)
 {
     void *host_addr;
 
-    guest_addr = cpu_untagged_addr(thread_cpu, guest_addr);
+    guest_addr = cpu_untagged_addr(get_thread_cpu_ptr(), guest_addr);
     if (!access_ok_untagged(type, guest_addr, len)) {
         return NULL;
     }
@@ -32,7 +32,7 @@ void unlock_user(void *host_ptr, abi_ulong guest_addr, ssize_t len)
     if (!host_ptr) {
         return;
     }
-    host_ptr_conv = g2h(thread_cpu, guest_addr);
+    host_ptr_conv = g2h(get_thread_cpu_ptr(), guest_addr);
     if (host_ptr == host_ptr_conv) {
         return;
     }

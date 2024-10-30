@@ -134,7 +134,7 @@ extern char safe_syscall_start[];
 extern char safe_syscall_end[];
 
 #define safe_syscall(...)                                                 \
-    safe_syscall_base(&get_task_state(thread_cpu)->signal_pending,        \
+    safe_syscall_base(&get_task_state(get_thread_cpu_ptr())->signal_pending,        \
                       __VA_ARGS__)
 
 #endif

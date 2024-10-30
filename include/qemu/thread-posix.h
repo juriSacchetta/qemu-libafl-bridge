@@ -1,11 +1,19 @@
 #ifndef QEMU_THREAD_POSIX_H
 #define QEMU_THREAD_POSIX_H
 
+#ifndef QEMU_FIBERS
 #include <pthread.h>
 #include <semaphore.h>
+#else
+#include "fibers/pth/pth.h"
+#endif
 
 struct QemuMutex {
+#ifndef QEMU_FIBERS
     pthread_mutex_t lock;
+#else
+    pth_mutex_t lock;
+#endif
 #ifdef CONFIG_DEBUG_MUTEX
     const char *file;
     int line;
@@ -22,7 +30,11 @@ typedef struct QemuRecMutex {
 } QemuRecMutex;
 
 struct QemuCond {
+#ifndef QEMU_FIBERS
     pthread_cond_t cond;
+#else
+    pth_cond_t cond;
+#endif
     bool initialized;
 };
 
@@ -42,7 +54,12 @@ struct QemuEvent {
 };
 
 struct QemuThread {
+#ifndef QEMU_FIBERS
     pthread_t thread;
+#else
+    pth_t thread;
+    
+#endif
 };
 
 #endif

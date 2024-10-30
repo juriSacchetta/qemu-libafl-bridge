@@ -6,12 +6,6 @@
 #include "src/fibers-thread.h"
 #include "src/fibers-utils.h"
 
-void fibers_init(CPUState *cpu)
-{
-   fibers_futex_init();
-   fibers_thread_init(cpu);
-}
-
 void fibers_call_scheduler(void)
 {
     int available_threads =
@@ -23,14 +17,11 @@ void fibers_call_scheduler(void)
     }
 }
 
-void fibers_fork_end(bool child)
-{
-    if (child)
-    {
-        fibers_thread_clear_all();
-        fibers_clean_futex();
-    }
-}
+// void *fiber_trampoline_set_cpu(void *arg){
+//     fiber_trampoline_args *args = (fiber_trampoline_args *)arg;
+//     pth_set_cpu(args->cpu);
+//     return args->func(arg);
+// }
 
 #ifdef AS_LIB
 #include "libafl/cpu.h"

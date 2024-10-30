@@ -66,34 +66,51 @@ static void compute_abs_deadline(struct timespec *ts, int ms)
 
 void qemu_mutex_init(QemuMutex *mutex)
 {
+#ifndef QEMU_FIBERS
     int err;
-
     err = pthread_mutex_init(&mutex->lock, NULL);
     if (err)
         error_exit(err, __func__);
+#else
+    bool success = pth_mutex_init(&mutex->lock);
+    if (!success) {
+        error_exit(ENOMEM, __func__);
+    }
+#endif
+
     qemu_mutex_post_init(mutex);
 }
 
 void qemu_mutex_destroy(QemuMutex *mutex)
 {
-    int err;
-
     assert(mutex->initialized);
     mutex->initialized = false;
+#ifndef QEMU_FIBERS
+    int err;
     err = pthread_mutex_destroy(&mutex->lock);
+    //FIXME: how can I emulate this when QEMU_FIBERS is defined?
     if (err)
         error_exit(err, __func__);
+#endif
+
 }
 
 void qemu_mutex_lock_impl(QemuMutex *mutex, const char *file, const int line)
 {
-    int err;
 
     assert(mutex->initialized);
     qemu_mutex_pre_lock(mutex, file, line);
+#ifndef QEMU_FIBERS
+    int err;
     err = pthread_mutex_lock(&mutex->lock);
     if (err)
         error_exit(err, __func__);
+#else
+    bool success = pth_mutex_acquire(&mutex->lock, FALSE, NULL);
+    if (!success) {
+        error_exit(ENOMEM, __func__);
+    }
+#endif
     qemu_mutex_post_lock(mutex, file, line);
 }
 
@@ -102,7 +119,11 @@ int qemu_mutex_trylock_impl(QemuMutex *mutex, const char *file, const int line)
     int err;
 
     assert(mutex->initialized);
+#ifndef QEMU_FIBERS
     err = pthread_mutex_trylock(&mutex->lock);
+#else
+    err = pth_mutex_acquire(&mutex->lock, TRUE, NULL);
+#endif
     if (err == 0) {
         qemu_mutex_post_lock(mutex, file, line);
         return 0;
@@ -115,27 +136,42 @@ int qemu_mutex_trylock_impl(QemuMutex *mutex, const char *file, const int line)
 
 void qemu_mutex_unlock_impl(QemuMutex *mutex, const char *file, const int line)
 {
-    int err;
 
     assert(mutex->initialized);
     qemu_mutex_pre_unlock(mutex, file, line);
+#ifndef QEMU_FIBERS
+    int err;
     err = pthread_mutex_unlock(&mutex->lock);
     if (err)
         error_exit(err, __func__);
+#else
+    bool success = pth_mutex_release(&mutex->lock);
+    if (!success) {
+        error_exit(ENOMEM, __func__);
+    }
+#endif
 }
 
 void qemu_rec_mutex_init(QemuRecMutex *mutex)
 {
+#ifndef QEMU_FIBERS
     int err;
     pthread_mutexattr_t attr;
 
     pthread_mutexattr_init(&attr);
     pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+
     err = pthread_mutex_init(&mutex->m.lock, &attr);
-    pthread_mutexattr_destroy(&attr);
     if (err) {
         error_exit(err, __func__);
     }
+    pthread_mutexattr_destroy(&attr);
+#else
+    bool success = pth_mutex_init(&mutex->m.lock);
+    if (!success) {
+        error_exit(ENOMEM, __func__);
+    }
+#endif
     mutex->m.initialized = true;
 }
 
@@ -161,8 +197,9 @@ void qemu_rec_mutex_unlock_impl(QemuRecMutex *mutex, const char *file, int line)
 
 void qemu_cond_init(QemuCond *cond)
 {
-    pthread_condattr_t attr;
+#ifndef QEMU_FIBERS
     int err;
+    pthread_condattr_t attr;
 
     err = pthread_condattr_init(&attr);
     if (err) {
@@ -182,18 +219,26 @@ void qemu_cond_init(QemuCond *cond)
     if (err) {
         error_exit(err, __func__);
     }
+#else
+    bool success = pth_cond_init(&cond->cond);
+    if (!success) {
+        error_exit(ENOMEM, __func__);
+    }
+#endif
     cond->initialized = true;
 }
 
 void qemu_cond_destroy(QemuCond *cond)
 {
-    int err;
-
     assert(cond->initialized);
     cond->initialized = false;
+#ifndef QEMU_FIBERS
+    int err;
     err = pthread_cond_destroy(&cond->cond);
+    //FIXME: how can I emulate this when QEMU_FIBERS is defined?
     if (err)
         error_exit(err, __func__);
+#endif
 }
 
 void qemu_cond_signal(QemuCond *cond)
@@ -201,31 +246,47 @@ void qemu_cond_signal(QemuCond *cond)
     int err;
 
     assert(cond->initialized);
+#ifndef QEMU_FIBERS
     err = pthread_cond_signal(&cond->cond);
+#else
+    err = pth_cond_notify(&cond->cond, FALSE);
+#endif
     if (err)
         error_exit(err, __func__);
 }
 
 void qemu_cond_broadcast(QemuCond *cond)
 {
-    int err;
-
     assert(cond->initialized);
+#ifndef QEMU_FIBERS
+    int err;
     err = pthread_cond_broadcast(&cond->cond);
     if (err)
         error_exit(err, __func__);
+#else
+    bool success = pth_cond_notify(&cond->cond, TRUE);
+    if (!success) {
+        error_exit(ENOMEM, __func__);
+    }
+#endif
 }
 
 void qemu_cond_wait_impl(QemuCond *cond, QemuMutex *mutex, const char *file, const int line)
 {
-    int err;
 
     assert(cond->initialized);
     qemu_mutex_pre_unlock(mutex, file, line);
-    err = pthread_cond_wait(&cond->cond, &mutex->lock);
-    qemu_mutex_post_lock(mutex, file, line);
+#ifndef QEMU_FIBERS
+    int err = pthread_cond_wait(&cond->cond, &mutex->lock);
     if (err)
         error_exit(err, __func__);
+#else
+    bool success = pth_cond_await(&cond->cond, &mutex->lock, NULL);
+    if (!success) {
+        error_exit(ENOMEM, __func__);
+    }
+#endif
+    qemu_mutex_post_lock(mutex, file, line);
 }
 
 static bool TSA_NO_TSA
@@ -236,7 +297,12 @@ qemu_cond_timedwait_ts(QemuCond *cond, QemuMutex *mutex, struct timespec *ts,
 
     assert(cond->initialized);
     trace_qemu_mutex_unlock(mutex, file, line);
+#ifndef QEMU_FIBERS
     err = pthread_cond_timedwait(&cond->cond, &mutex->lock, ts);
+#else
+    pth_event_t ev = pth_event(PTH_EVENT_TIME, pth_timeout(ts->tv_sec, ts->tv_nsec * 1000));
+    err = pth_cond_await(&cond->cond, &mutex->lock, ev);
+#endif
     trace_qemu_mutex_locked(mutex, file, line);
     if (err && err != ETIMEDOUT) {
         error_exit(err, __func__);
@@ -506,11 +572,15 @@ static void *qemu_thread_start(void *args)
     void *arg = qemu_thread_args->arg;
     void *r;
 
+#ifdef QEMU_FIBERS
+    qemu_tls_init();
+#endif
     /* Attempt to set the threads name; note that this is for debug, so
      * we're not going to fail if we can't set it.
      */
     if (name_threads && qemu_thread_args->name) {
-# if defined(CONFIG_PTHREAD_SETNAME_NP_W_TID)
+# if defined(QEMU_FIBERS)
+# elif defined(CONFIG_PTHREAD_SETNAME_NP_W_TID)
         pthread_setname_np(pthread_self(), qemu_thread_args->name);
 # elif defined(CONFIG_PTHREAD_SETNAME_NP_WO_TID)
         pthread_setname_np(qemu_thread_args->name);
@@ -522,6 +592,7 @@ static void *qemu_thread_start(void *args)
     g_free(qemu_thread_args->name);
     g_free(qemu_thread_args);
 
+#ifndef QEMU_FIBERS
     /*
      * GCC 11 with glibc 2.17 on PowerPC reports
      *
@@ -532,16 +603,20 @@ static void *qemu_thread_start(void *args)
      *
      * which is clearly nonsense.
      */
+
 #pragma GCC diagnostic push
 #ifndef __clang__
 #pragma GCC diagnostic ignored "-Wstringop-overflow"
 #endif
-
     pthread_cleanup_push(qemu_thread_atexit_notify, NULL);
     r = start_routine(arg);
     pthread_cleanup_pop(1);
-
 #pragma GCC diagnostic pop
+#else
+    pth_cleanup_push(qemu_thread_atexit_notify, NULL);
+    r = start_routine(arg);
+    pth_cleanup_pop(1);
+#endif
 
     return r;
 }
@@ -551,17 +626,29 @@ void qemu_thread_create(QemuThread *thread, const char *name,
                        void *arg, int mode)
 {
     sigset_t set, oldset;
+    QemuThreadArgs *qemu_thread_args;
+#ifndef QEMU_FIBERS
     int err;
     pthread_attr_t attr;
-    QemuThreadArgs *qemu_thread_args;
+#else
+    pth_attr_t attr = pth_attr_new();
+#endif
 
+
+#ifndef QEMU_FIBERS
     err = pthread_attr_init(&attr);
+
     if (err) {
         error_exit(err, __func__);
     }
+#endif
 
     if (mode == QEMU_THREAD_DETACHED) {
+#ifndef QEMU_FIBERS
         pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+#else
+        pth_attr_set(attr, PTH_ATTR_JOINABLE, FALSE);
+#endif
     }
 
     /* Leave signal handling to the iothread.  */
@@ -571,28 +658,32 @@ void qemu_thread_create(QemuThread *thread, const char *name,
     sigdelset(&set, SIGFPE);
     sigdelset(&set, SIGILL);
     /* TODO avoid SIGBUS loss on macOS */
+#ifndef QEMU_FIBERS
     pthread_sigmask(SIG_SETMASK, &set, &oldset);
-
+#else
+    pth_sigmask(SIG_SETMASK, &set, &oldset);
+#endif
     qemu_thread_args = g_new0(QemuThreadArgs, 1);
     qemu_thread_args->name = g_strdup(name);
     qemu_thread_args->start_routine = start_routine;
     qemu_thread_args->arg = arg;
-
+#ifndef QEMU_FIBERS
     err = pthread_create(&thread->thread, &attr,
                          qemu_thread_start, qemu_thread_args);
-
     if (err)
         error_exit(err, __func__);
-
     pthread_sigmask(SIG_SETMASK, &oldset, NULL);
-
     pthread_attr_destroy(&attr);
+#else
+    pth_spawn(attr, qemu_thread_start, qemu_thread_args);
+    pth_sigmask(SIG_SETMASK, &oldset, NULL);
+#endif
 }
 
 int qemu_thread_set_affinity(QemuThread *thread, unsigned long *host_cpus,
                              unsigned long nbits)
 {
-#if defined(CONFIG_PTHREAD_AFFINITY_NP)
+#if defined(CONFIG_PTHREAD_AFFINITY_NP) && !defined(QEMU_FIBERS)
     const size_t setsize = CPU_ALLOC_SIZE(nbits);
     unsigned long value;
     cpu_set_t *cpuset;
@@ -619,7 +710,7 @@ int qemu_thread_set_affinity(QemuThread *thread, unsigned long *host_cpus,
 int qemu_thread_get_affinity(QemuThread *thread, unsigned long **host_cpus,
                              unsigned long *nbits)
 {
-#if defined(CONFIG_PTHREAD_AFFINITY_NP)
+#if defined(CONFIG_PTHREAD_AFFINITY_NP) && !defined(QEMU_FIBERS)
     unsigned long tmpbits;
     cpu_set_t *cpuset;
     size_t setsize;
@@ -660,12 +751,20 @@ int qemu_thread_get_affinity(QemuThread *thread, unsigned long **host_cpus,
 
 void qemu_thread_get_self(QemuThread *thread)
 {
+    #ifndef QEMU_FIBERS
     thread->thread = pthread_self();
+    #else
+    thread->thread = pth_self();
+    #endif
 }
 
 bool qemu_thread_is_self(QemuThread *thread)
 {
-   return pthread_equal(pthread_self(), thread->thread);
+#ifndef QEMU_FIBERS
+    return pthread_equal(pthread_self(), thread->thread);
+#else
+    return pth_self() == thread->thread;
+#endif
 }
 
 void qemu_thread_exit(void *retval)
@@ -675,12 +774,27 @@ void qemu_thread_exit(void *retval)
 
 void *qemu_thread_join(QemuThread *thread)
 {
-    int err;
     void *ret;
-
+#ifndef QEMU_FIBERS
+    int err;
     err = pthread_join(thread->thread, &ret);
     if (err) {
         error_exit(err, __func__);
     }
+#else
+    bool success = pth_join(thread->thread, &ret);
+    if (!success) {
+        error_exit(0, __func__);
+    }   
+#endif
     return ret;
 }
+
+#ifdef QEMU_FIBERS
+#include "qemu/rcu.h"
+void qemu_tls_init(void) {
+    if(pth_get_tls() != NULL) return;
+    void *tls = malloc(TLS_SIZE * sizeof(void *));
+    pth_set_tls(tls);
+}
+#endif

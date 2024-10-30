@@ -6,7 +6,6 @@
 
 #include "pth/pth.h"
 #include "fibers.h"
-#include "src/fibers-types.h"
 #include "src/fibers-thread.h"
 #include "src/fibers-utils.h"
 //TODO: check this signature
@@ -29,10 +28,7 @@ DEFINE_FIBER_SYSCALL(int, connect, int sockfd, const struct sockaddr *addr, sock
 }
 
 DEFINE_FIBER_SYSCALL(int, gettid, void) {
-    pth_t me = pth_self();
-    qemu_fiber *current = fiber_by_pth(me);
-    assert(current != NULL);
-    return current->fiber_tid;
+    return pth_gettid();
 }
 
 DEFINE_FIBER_SYSCALL(int, nanosleep, const struct timespec *req, struct timespec *rem) {
@@ -100,19 +96,25 @@ DEFINE_FIBER_SYSCALL(ssize_t, sendto, int sockfd, const void *buf, size_t len, i
 }
 
 DEFINE_FIBER_SYSCALL(int, tkill, int tid, int sig) {
-    assert(tid <= fibers_count);
-    qemu_fiber *current = fiber_by_tid(tid);
-    if (current == NULL) return -TARGET_ESRCH;
-    force_sig_env(current->env, sig);
-    return 0;
+    CPUState *cpu;
+    CPU_FOREACH(cpu) {
+        if(cpu->thread_id == tid) {
+            force_sig_env(cpu_env(cpu), sig);
+            return 0;
+        }
+    }
+    return -ESRCH;
 }
 
 DEFINE_FIBER_SYSCALL(int, tgkill, int arg1, int arg2, int arg3) {
-    assert(arg2 > BASE_FIBERS_TID);
-    qemu_fiber *current = fiber_by_tid(arg2);
-    if(current == NULL) return -TARGET_ESRCH;
-    force_sig_env(current->env, arg3);
-    return 0;
+    CPUState *cpu;
+    CPU_FOREACH(cpu) {
+        if(cpu->thread_id == arg2) {
+            force_sig_env(cpu_env(cpu), arg3);
+            return 0;
+        }
+    }
+    return -ESRCH;
 }
 
 DEFINE_FIBER_SYSCALL(pid_t, wait4, pid_t pid, int *status, int options, struct rusage *rusage) {

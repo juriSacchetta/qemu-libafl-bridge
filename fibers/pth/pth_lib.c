@@ -29,6 +29,10 @@
                                             -- Unknown                */
 #include "pth_p.h"
 
+#define BASE_TID 0x3ffffff
+
+int global_count_tid = BASE_TID;
+
 /* return the hexadecimal Pth library version number */
 long pth_version(void)
 {
@@ -56,7 +60,7 @@ static void pth_ex_terminate(ex_t *ex)
 #endif
 
 /* initialize the package */
-pth_t pth_init(CPUState *qemu_cpu_ptr)
+pth_t pth_init(void)
 {
     pth_attr_t t_attr;
 
@@ -92,7 +96,7 @@ pth_t pth_init(CPUState *qemu_cpu_ptr)
     pth_attr_set(t_attr, PTH_ATTR_CANCEL_STATE, PTH_CANCEL_DISABLE);
     pth_attr_set(t_attr, PTH_ATTR_STACK_SIZE,   64*1024);
     pth_attr_set(t_attr, PTH_ATTR_STACK_ADDR,   NULL);
-    pth_sched = pth_spawn(t_attr, 0, pth_scheduler, NULL);
+    pth_sched = pth_spawn(t_attr, pth_scheduler, NULL);
     if (pth_sched == NULL) {
         pth_shield {
             pth_attr_destroy(t_attr);
@@ -109,7 +113,7 @@ pth_t pth_init(CPUState *qemu_cpu_ptr)
     pth_attr_set(t_attr, PTH_ATTR_CANCEL_STATE, PTH_CANCEL_ENABLE|PTH_CANCEL_DEFERRED);
     pth_attr_set(t_attr, PTH_ATTR_STACK_SIZE,   0 /* special */);
     pth_attr_set(t_attr, PTH_ATTR_STACK_ADDR,   NULL);
-    pth_main = pth_spawn(t_attr, qemu_cpu_ptr, (void *(*)(void *))(-1), NULL);
+    pth_main = pth_spawn(t_attr, (void *(*)(void *))(-1), NULL);
     if (pth_main == NULL) {
         pth_shield {
             pth_attr_destroy(t_attr);
@@ -222,7 +226,7 @@ static void pth_spawn_trampoline(void)
     abort();
 }
 
-pth_t pth_spawn(pth_attr_t attr, CPUState *qemu_cpu_ptr, void *(*func)(void *), void *arg)
+pth_t pth_spawn(pth_attr_t attr, void *(*func)(void *), void *arg)
 {
     pth_t t;
     unsigned int stacksize;
@@ -326,7 +330,7 @@ pth_t pth_spawn(pth_attr_t attr, CPUState *qemu_cpu_ptr, void *(*func)(void *), 
         pth_pqueue_insert(&pth_NQ, t->prio, t);
     }
 
-    t->qemu_cpu_ptr = qemu_cpu_ptr;
+    t->tid = global_count_tid++;
     pth_debug1("pth_spawn: leave");
     /* the returned thread id is just the pointer
        to the thread control block... */

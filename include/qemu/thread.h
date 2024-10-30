@@ -23,6 +23,17 @@ typedef struct QemuThread QemuThread;
 #define QEMU_THREAD_JOINABLE 0
 #define QEMU_THREAD_DETACHED 1
 
+#ifdef QEMU_FIBERS 
+#define QEMU_MUTEX_INITIALIZER {PTH_MUTEX_INIT, 1}
+#define QEMU_COND_INITIALIZER {PTH_COND_INIT, 1}
+#define CPUSTATE_POSITION 0
+#define TLS_SIZE (CPUSTATE_POSITION + 1)
+void qemu_tls_init(void);
+#else
+#define QEMU_MUTEX_INITIALIZER {PTHREAD_MUTEX_INITIALIZER, 1}
+#define QEMU_COND_INITIALIZER {PTHREAD_COND_INITIALIZER, 1}
+#endif
+
 void qemu_mutex_init(QemuMutex *mutex);
 void qemu_mutex_destroy(QemuMutex *mutex);
 int TSA_NO_TSA qemu_mutex_trylock_impl(QemuMutex *mutex, const char *file,

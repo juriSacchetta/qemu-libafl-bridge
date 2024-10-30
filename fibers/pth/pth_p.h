@@ -389,7 +389,8 @@ struct pth_cleanup_st {
 
     /* thread control block */
 struct pth_st {
-    CPUState       *qemu_cpu_ptr;
+    int            tid;
+    void*          tls;                  /* Pointer to the tls struct*/
     /* priority queue handling */
     pth_t          q_next;               /* next thread in pool                         */
     pth_t          q_prev;               /* previous thread in pool                     */
@@ -522,7 +523,7 @@ struct pth_attr_st {
 #line 40 "pth_lib.c"
 #define pth_implicit_init() \
     if (!pth_initialized) \
-        pth_init(0);
+        pth_init();
 #line 1 "_ON_THE_FLY_"
 
 /* make sure the scpp source extensions are skipped */
@@ -810,7 +811,5 @@ extern char * pth_asprintf(const char *, ...);
 END_DECLARATION
 
 #include <stdint.h>
-extern __thread CPUState *thread_cpu;
-extern __thread CPUState *current_cpu;
 
 #endif /* _PTH_P_H_ */

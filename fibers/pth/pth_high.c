@@ -35,6 +35,18 @@
 
 #include "pth_p.h"
 
+void pth_set_tls(void* tls) {
+    pth_current->tls = tls;
+}
+
+void* pth_get_tls(void) {
+    return pth_current->tls;
+}
+
+int pth_gettid(void) {
+    return pth_current->tid;
+}
+
 /* Pth variant of nanosleep(2) */
 int pth_nanosleep(const struct timespec *rqtp, struct timespec *rmtp)
 {
