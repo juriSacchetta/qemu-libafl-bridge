@@ -42,6 +42,12 @@ int pth_mutex_init(pth_mutex_t *mutex)
     return TRUE;
 }
 
+
+int pth_mutex_am_i_the_owner(pth_mutex_t *mutex)
+{
+    return mutex->mx_owner == pth_current;
+}
+
 int pth_mutex_acquire(pth_mutex_t *mutex, int tryonly, pth_event_t ev_extra)
 {
     static pth_key_t ev_key = PTH_KEY_INIT;

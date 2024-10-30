@@ -30,43 +30,35 @@
 #include "target/arm/cpu-features.h"
 #endif
 
-static pthread_mutex_t mmap_mutex = PTHREAD_MUTEX_INITIALIZER;
-static __thread int mmap_lock_count;
+static QemuRecMutex mmap_mutex = QEMU_REC_MUTEX_INITIALIZER;
 
 void mmap_lock(void)
 {
-    if (mmap_lock_count++ == 0) {
-        pthread_mutex_lock(&mmap_mutex);
-    }
+    qemu_rec_mutex_lock(&mmap_mutex);
 }
 
 void mmap_unlock(void)
 {
-    assert(mmap_lock_count > 0);
-    if (--mmap_lock_count == 0) {
-        pthread_mutex_unlock(&mmap_mutex);
-    }
+    qemu_rec_mutex_unlock(&mmap_mutex);
 }
 
 bool have_mmap_lock(void)
 {
-    return mmap_lock_count > 0 ? true : false;
+    return qemu_mutex_am_i_the_owner(&mmap_mutex);
 }
 
 /* Grab lock to make sure things are in a consistent state after fork().  */
 void mmap_fork_start(void)
 {
-    if (mmap_lock_count)
-        abort();
-    pthread_mutex_lock(&mmap_mutex);
+    qemu_rec_mutex_lock(&mmap_mutex);
 }
 
 void mmap_fork_end(int child)
 {
     if (child) {
-        pthread_mutex_init(&mmap_mutex, NULL);
+        qemu_rec_mutex_init(&mmap_mutex);
     } else {
-        pthread_mutex_unlock(&mmap_mutex);
+        qemu_rec_mutex_unlock(&mmap_mutex);
     }
 }
 

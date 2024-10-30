@@ -797,4 +797,8 @@ void qemu_tls_init(void) {
     void *tls = malloc(TLS_SIZE * sizeof(void *));
     pth_set_tls(tls);
 }
+
+bool qemu_mutex_am_i_the_owner(QemuRecMutex *mutex) {
+    return pth_mutex_am_i_the_owner(&mutex->m.lock);
+}
 #endif

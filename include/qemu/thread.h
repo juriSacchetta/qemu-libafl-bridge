@@ -25,6 +25,7 @@ typedef struct QemuThread QemuThread;
 
 #ifdef QEMU_FIBERS 
 #define QEMU_MUTEX_INITIALIZER {PTH_MUTEX_INIT, 1}
+#define QEMU_REC_MUTEX_INITIALIZER {QEMU_MUTEX_INITIALIZER}
 #define QEMU_COND_INITIALIZER {PTH_COND_INIT, 1}
 #define THREAD_CPU 0
 #define CURRENT_CPU 1
@@ -32,6 +33,7 @@ typedef struct QemuThread QemuThread;
 #define TLS_MMAP_LOCK_COUNT 3
 #define TLS_SIZE (TLS_MMAP_LOCK_COUNT + 1)
 void qemu_tls_init(void);
+bool qemu_mutex_am_i_the_owner(QemuRecMutex *mutex);
 #else
 #define QEMU_MUTEX_INITIALIZER {PTHREAD_MUTEX_INITIALIZER, 1}
 #define QEMU_COND_INITIALIZER {PTHREAD_COND_INITIALIZER, 1}

@@ -496,6 +496,7 @@ extern int            pth_atfork_pop(void);
 extern pid_t          pth_fork(void);
 
     /* synchronization functions */
+extern int           pth_mutex_am_i_the_owner(pth_mutex_t *mutex);
 extern int            pth_mutex_init(pth_mutex_t *);
 extern int            pth_mutex_acquire(pth_mutex_t *, int, pth_event_t);
 extern int            pth_mutex_release(pth_mutex_t *);
