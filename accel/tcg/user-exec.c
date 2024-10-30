@@ -32,8 +32,22 @@
 #include "internal-common.h"
 #include "internal-target.h"
 
+#ifndef QEMU_FIBERS
 __thread uintptr_t helper_retaddr;
+uintptr_t get_helper_retaddr(void) {
+    return helper_retaddr;
+}
+#else
+uintptr_t get_helper_retaddr_tls(void) {
+    void **tls = pth_get_tls();
+    return (uintptr_t)tls[HELPER_RETADD];
+}
 
+void set_helper_retaddr_tls(uintptr_t helper) {
+    void **tls = pth_get_tls();
+    tls[HELPER_RETADD] = (void *)helper;
+}
+#endif
 //#define DEBUG_SIGNAL
 
 /*
@@ -41,7 +55,7 @@ __thread uintptr_t helper_retaddr;
  */
 MMUAccessType adjust_signal_pc(uintptr_t *pc, bool is_write)
 {
-    switch (helper_retaddr) {
+    switch (get_helper_retaddr_tls()) {
     default:
         /*
          * Fault during host memory operation within a helper function.
@@ -49,7 +63,7 @@ MMUAccessType adjust_signal_pc(uintptr_t *pc, bool is_write)
          * pointer into the generated code that will unwind to the
          * correct guest pc.
          */
-        *pc = helper_retaddr;
+        *pc = get_helper_retaddr_tls();
         break;
 
     case 0:

@@ -39,7 +39,7 @@ void pth_set_tls(void* tls) {
     pth_current->tls = tls;
 }
 
-void* pth_get_tls(void) {
+void** pth_get_tls(void) {
     return pth_current->tls;
 }
 

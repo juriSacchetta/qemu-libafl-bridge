@@ -302,11 +302,15 @@ Int128 cpu_atomic_cmpxchgo_be_mmu(CPUArchState *env, abi_ptr addr,
 
 #if defined(CONFIG_USER_ONLY)
 
+#ifndef QEMU_FIBERS
 extern __thread uintptr_t helper_retaddr;
+#endif
+uintptr_t get_helper_retaddr_tls(void);
+void set_helper_retaddr_tls(uintptr_t helper);
 
 static inline void set_helper_retaddr(uintptr_t ra)
 {
-    helper_retaddr = ra;
+    set_helper_retaddr_tls(ra);
     /*
      * Ensure that this write is visible to the SIGSEGV handler that
      * may be invoked due to a subsequent invalid memory operation.
@@ -321,7 +325,7 @@ static inline void clear_helper_retaddr(void)
      * removing the data visible to the signal handler.
      */
     signal_barrier();
-    helper_retaddr = 0;
+    set_helper_retaddr(0);
 }
 
 #else

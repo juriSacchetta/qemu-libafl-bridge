@@ -420,7 +420,7 @@ typedef void *Sfdisc_t;
 
 #include <stdint.h>
 
-extern void*          pth_get_tls(void);
+extern void**          pth_get_tls(void);
 extern void           pth_set_tls(void* tls);
 
     /* global functions */

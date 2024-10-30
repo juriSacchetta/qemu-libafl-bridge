@@ -127,12 +127,13 @@ CPUState* get_current_cpu_ptr(void) {return current_cpu;}
 void set_current_cpu_ptr(CPUState *cpu) {current_cpu = cpu}
 #else
 CPUState* get_current_cpu_ptr(void) {
-    void *tls = pth_get_tls();
-    return ((CPUState **)tls)[CURRENT_CPU];
+    void **tls = pth_get_tls();
+    void *cpu = tls[CURRENT_CPU];
+    return (CPUState *)cpu;
 }
 void set_current_cpu_ptr(CPUState *cpu) {
-    void *tls = pth_get_tls();
-    ((CPUState **)tls)[CURRENT_CPU] = cpu;
+    void **tls = pth_get_tls();
+    tls[CURRENT_CPU] = (void *)cpu;
 }
 #endif
 
