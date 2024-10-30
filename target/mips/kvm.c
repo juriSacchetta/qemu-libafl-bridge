@@ -211,7 +211,7 @@ int kvm_mips_set_interrupt(MIPSCPU *cpu, int irq, int level)
 
 int kvm_mips_set_ipi_interrupt(MIPSCPU *cpu, int irq, int level)
 {
-    CPUState *cs = current_cpu;
+    CPUState *cs = get_current_cpu_ptr();
     CPUState *dest_cs = CPU(cpu);
     struct kvm_mips_interrupt intr;
 

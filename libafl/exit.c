@@ -136,7 +136,7 @@ void libafl_exit_request_timeout(void)
 {
     expected_exit = true;
     last_exit_reason.kind = TIMEOUT;
-    last_exit_reason.cpu = current_cpu;
+    last_exit_reason.cpu = get_current_cpu_ptr();
 
     qemu_system_debug_request();
 }

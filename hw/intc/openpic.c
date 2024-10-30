@@ -168,7 +168,7 @@ static int get_current_cpu(void)
         return -1;
     }
 
-    return current_cpu->cpu_index;
+    return get_current_cpu_ptr()->cpu_index;
 }
 
 static uint32_t openpic_cpu_read_internal(void *opaque, hwaddr addr,

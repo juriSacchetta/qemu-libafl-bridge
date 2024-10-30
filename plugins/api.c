@@ -252,7 +252,7 @@ void *qemu_plugin_insn_haddr(const struct qemu_plugin_insn *insn)
 
 char *qemu_plugin_insn_disas(const struct qemu_plugin_insn *insn)
 {
-    CPUState *cpu = current_cpu;
+    CPUState *cpu = get_current_cpu_ptr();
     return plugin_disas(cpu, insn->vaddr, insn->data->len);
 }
 
@@ -302,7 +302,7 @@ struct qemu_plugin_hwaddr *qemu_plugin_get_hwaddr(qemu_plugin_meminfo_t info,
                                                   uint64_t vaddr)
 {
 #ifdef CONFIG_SOFTMMU
-    CPUState *cpu = current_cpu;
+    CPUState *cpu = get_current_cpu_ptr();
     unsigned int mmu_idx = get_mmuidx(info);
     enum qemu_plugin_mem_rw rw = get_plugin_meminfo_rw(info);
     hwaddr_info.is_store = (rw & QEMU_PLUGIN_MEM_W) != 0;
@@ -385,7 +385,7 @@ const char *qemu_plugin_path_to_binary(void)
 {
     char *path = NULL;
 #ifdef CONFIG_USER_ONLY
-    TaskState *ts = get_task_state(current_cpu);
+    TaskState *ts = get_task_state(get_current_cpu_ptr());
     path = g_strdup(ts->bprm->filename);
 #endif
     return path;
@@ -395,7 +395,7 @@ uint64_t qemu_plugin_start_code(void)
 {
     uint64_t start = 0;
 #ifdef CONFIG_USER_ONLY
-    TaskState *ts = get_task_state(current_cpu);
+    TaskState *ts = get_task_state(get_current_cpu_ptr());
     start = ts->info->start_code;
 #endif
     return start;
@@ -405,7 +405,7 @@ uint64_t qemu_plugin_end_code(void)
 {
     uint64_t end = 0;
 #ifdef CONFIG_USER_ONLY
-    TaskState *ts = get_task_state(current_cpu);
+    TaskState *ts = get_task_state(get_current_cpu_ptr());
     end = ts->info->end_code;
 #endif
     return end;
@@ -415,7 +415,7 @@ uint64_t qemu_plugin_entry_code(void)
 {
     uint64_t entry = 0;
 #ifdef CONFIG_USER_ONLY
-    TaskState *ts = get_task_state(current_cpu);
+    TaskState *ts = get_task_state(get_current_cpu_ptr());
     entry = ts->info->entry;
 #endif
     return entry;
@@ -460,17 +460,17 @@ static GArray *create_register_handles(GArray *gdbstub_regs)
 
 GArray *qemu_plugin_get_registers(void)
 {
-    g_assert(current_cpu);
+    g_assert(get_current_cpu_ptr());
 
-    g_autoptr(GArray) regs = gdb_get_register_list(current_cpu);
+    g_autoptr(GArray) regs = gdb_get_register_list(get_current_cpu_ptr());
     return create_register_handles(regs);
 }
 
 int qemu_plugin_read_register(struct qemu_plugin_register *reg, GByteArray *buf)
 {
-    g_assert(current_cpu);
+    g_assert(get_current_cpu_ptr());
 
-    return gdb_read_register(current_cpu, buf, GPOINTER_TO_INT(reg));
+    return gdb_read_register(get_current_cpu_ptr(), buf, GPOINTER_TO_INT(reg));
 }
 
 struct qemu_plugin_scoreboard *qemu_plugin_scoreboard_new(size_t element_size)

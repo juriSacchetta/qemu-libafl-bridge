@@ -94,7 +94,7 @@ static uint64_t vmport_ioport_read(void *opaque, hwaddr addr,
                                    unsigned size)
 {
     VMPortState *s = opaque;
-    CPUState *cs = current_cpu;
+    CPUState *cs = get_current_cpu_ptr();
     X86CPU *cpu = X86_CPU(cs);
     CPUX86State *env;
     unsigned char command;

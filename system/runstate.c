@@ -528,7 +528,7 @@ void qemu_system_guest_panicked(GuestPanicInformation *info)
     qemu_log_mask(LOG_GUEST_ERROR, "Guest crashed");
 
     if (current_cpu) {
-        current_cpu->crash_occurred = true;
+        get_current_cpu_ptr()->crash_occurred = true;
     }
     /*
      * TODO:  Currently the available panic actions are: none, pause, and

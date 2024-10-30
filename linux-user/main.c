@@ -187,17 +187,17 @@ void fork_end(pid_t pid)
 }
 
 #ifndef QEMU_FIBERS
-__thread CPUState *thread_cpu;
+static __thread CPUState *thread_cpu;
 CPUState* get_thread_cpu_ptr(void) {return thread_cpu;}
 void set_thread_cpu_ptr(CPUState *cpu) {thread_cpu = cpu}
 #else
-CPUState* get_thread_cpu_ptr(void);
 CPUState* get_thread_cpu_ptr(void) {
-    return ((CPUState **)pth_get_tls())[CPUSTATE_POSITION];
+    void *tls = pth_get_tls();
+    return ((CPUState **)tls)[THREAD_CPU];
 }
-void set_thread_cpu_ptr(CPUState *cpu);
 void set_thread_cpu_ptr(CPUState *cpu) {
-    ((CPUState **)pth_get_tls())[CPUSTATE_POSITION] = cpu;
+    void *tls = pth_get_tls();
+    ((CPUState **)tls)[THREAD_CPU] = cpu;
 }
 #endif
 
@@ -867,6 +867,10 @@ int main(int argc, char **argv, char **envp)
     cpu = cpu_create(cpu_type);
     env = cpu_env(cpu);
     cpu_reset(cpu);
+#ifdef QEMU_FIBERS
+    //TODO: create an init api for threads
+    qemu_tls_init();
+#endif
     set_thread_cpu_ptr(cpu);
 
     /*

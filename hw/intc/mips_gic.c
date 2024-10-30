@@ -118,7 +118,7 @@ static uint64_t gic_read_vp(MIPSGICState *gic, uint32_t vp_index, hwaddr addr,
 static uint64_t gic_read(void *opaque, hwaddr addr, unsigned size)
 {
     MIPSGICState *gic = (MIPSGICState *) opaque;
-    uint32_t vp_index = current_cpu->cpu_index;
+    uint32_t vp_index = get_current_cpu_ptr()->cpu_index;
     uint64_t ret = 0;
     int i, base, irq_src;
     uint32_t other_index;
@@ -262,7 +262,7 @@ static void gic_write(void *opaque, hwaddr addr, uint64_t data, unsigned size)
 {
     int intr;
     MIPSGICState *gic = (MIPSGICState *) opaque;
-    uint32_t vp_index = current_cpu->cpu_index;
+    uint32_t vp_index = get_current_cpu_ptr()->cpu_index;
     int i, base, irq_src;
     uint32_t other_index;
 

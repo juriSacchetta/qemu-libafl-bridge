@@ -574,7 +574,7 @@ void qemu_plugin_user_exit(void)
     }
     qemu_rec_mutex_unlock(&plugin.lock);
 
-    tb_flush(current_cpu);
+    tb_flush(get_current_cpu_ptr());
     end_exclusive();
 
     /* now it's safe to handle the exit case */

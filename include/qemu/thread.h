@@ -26,8 +26,9 @@ typedef struct QemuThread QemuThread;
 #ifdef QEMU_FIBERS 
 #define QEMU_MUTEX_INITIALIZER {PTH_MUTEX_INIT, 1}
 #define QEMU_COND_INITIALIZER {PTH_COND_INIT, 1}
-#define CPUSTATE_POSITION 0
-#define TLS_SIZE (CPUSTATE_POSITION + 1)
+#define THREAD_CPU 0
+#define CURRENT_CPU 1
+#define TLS_SIZE (CURRENT_CPU + 1)
 void qemu_tls_init(void);
 #else
 #define QEMU_MUTEX_INITIALIZER {PTHREAD_MUTEX_INITIALIZER, 1}

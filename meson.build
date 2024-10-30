@@ -3939,7 +3939,7 @@ foreach target : target_dirs
                  dependencies: arch_deps,
                  objects: objects,
                  include_directories: target_inc,
-                 c_args: c_args,
+                 c_args: c_args + ['-Wno-error=comment'],
                  build_by_default: false,
                  name_suffix: 'fa',
                  pic: 'AS_SHARED_LIB' in config_host)

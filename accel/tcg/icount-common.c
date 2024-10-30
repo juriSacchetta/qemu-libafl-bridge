@@ -105,7 +105,7 @@ void icount_update(CPUState *cpu)
 
 static int64_t icount_get_raw_locked(void)
 {
-    CPUState *cpu = current_cpu;
+    CPUState *cpu = get_current_cpu_ptr();
 
     if (cpu && cpu->running) {
         if (!cpu->neg.can_do_io) {

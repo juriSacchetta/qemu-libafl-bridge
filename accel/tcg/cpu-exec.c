@@ -521,7 +521,7 @@ static void cpu_exec_exit(CPUState *cpu)
 static void cpu_exec_longjmp_cleanup(CPUState *cpu)
 {
     /* Non-buggy compilers preserve this; assert the correct value. */
-    g_assert(cpu == current_cpu);
+    g_assert(cpu == get_current_cpu_ptr());
 
 #ifdef CONFIG_USER_ONLY
     clear_helper_retaddr();
@@ -566,7 +566,7 @@ void cpu_exec_step_atomic(CPUState *cpu)
 
     if (sigsetjmp(cpu->jmp_env, 0) == 0) {
         start_exclusive();
-        g_assert(cpu == current_cpu);
+        g_assert(cpu == get_current_cpu_ptr());
         g_assert(!cpu->running);
         cpu->running = true;
 
@@ -1097,7 +1097,7 @@ int cpu_exec(CPUState *cpu)
     SyncClocks sc = { 0 };
 
     /* replay_interrupt may need current_cpu */
-    current_cpu = cpu;
+    set_current_cpu_ptr(cpu);
 
     if (cpu_handle_halt(cpu)) {
         return EXCP_HALTED;

@@ -409,8 +409,8 @@ void plugin_reset_uninstall(qemu_plugin_id_t id,
      * Only flush the code cache if the vCPUs have been created. If so,
      * current_cpu must be non-NULL.
      */
-    if (current_cpu) {
-        async_safe_run_on_cpu(current_cpu, plugin_flush_destroy,
+    if (get_current_cpu_ptr()) {
+        async_safe_run_on_cpu(get_current_cpu_ptr(), plugin_flush_destroy,
                               RUN_ON_CPU_HOST_PTR(data));
     } else {
         /*

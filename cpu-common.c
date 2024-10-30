@@ -121,7 +121,20 @@ CPUState *qemu_get_cpu(int index)
 }
 
 /* current CPU in the current thread. It is only valid inside cpu_exec() */
-__thread CPUState *current_cpu;
+#ifndef QEMU_FIBERS
+static __thread CPUState *current_cpu;
+CPUState* get_current_cpu_ptr(void) {return current_cpu;}
+void set_current_cpu_ptr(CPUState *cpu) {current_cpu = cpu}
+#else
+CPUState* get_current_cpu_ptr(void) {
+    void *tls = pth_get_tls();
+    return ((CPUState **)tls)[CURRENT_CPU];
+}
+void set_current_cpu_ptr(CPUState *cpu) {
+    void *tls = pth_get_tls();
+    ((CPUState **)tls)[CURRENT_CPU] = cpu;
+}
+#endif
 
 struct qemu_work_item {
     QSIMPLEQ_ENTRY(qemu_work_item) node;
@@ -158,10 +171,10 @@ void do_run_on_cpu(CPUState *cpu, run_on_cpu_func func, run_on_cpu_data data,
 
     queue_work_on_cpu(cpu, &wi);
     while (!qatomic_load_acquire(&wi.done)) {
-        CPUState *self_cpu = current_cpu;
+        CPUState *self_cpu = get_current_cpu_ptr();
 
         qemu_cond_wait(&qemu_work_cond, mutex);
-        current_cpu = self_cpu;
+        set_current_cpu_ptr(self_cpu);
     }
 }
 
@@ -193,8 +206,8 @@ void start_exclusive(void)
     CPUState *other_cpu;
     int running_cpus;
 
-    if (current_cpu->exclusive_context_count) {
-        current_cpu->exclusive_context_count++;
+    if (get_current_cpu_ptr()->exclusive_context_count) {
+        get_current_cpu_ptr()->exclusive_context_count++;
         return;
     }
 
@@ -225,14 +238,14 @@ void start_exclusive(void)
      */
     qemu_mutex_unlock(&qemu_cpu_list_lock);
 
-    current_cpu->exclusive_context_count = 1;
+    get_current_cpu_ptr()->exclusive_context_count = 1;
 }
 
 /* Finish an exclusive operation.  */
 void end_exclusive(void)
 {
-    current_cpu->exclusive_context_count--;
-    if (current_cpu->exclusive_context_count) {
+    get_current_cpu_ptr()->exclusive_context_count--;
+    if (get_current_cpu_ptr()->exclusive_context_count) {
         return;
     }
 

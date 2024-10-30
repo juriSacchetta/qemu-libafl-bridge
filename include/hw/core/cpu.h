@@ -594,8 +594,8 @@ extern CPUTailQ cpus_queue;
 #define CPU_FOREACH_SAFE(cpu, next_cpu) \
     QTAILQ_FOREACH_SAFE_RCU(cpu, &cpus_queue, node, next_cpu)
 
-extern __thread CPUState *current_cpu;
-
+CPUState* get_current_cpu_ptr(void);
+void set_current_cpu_ptr(CPUState *cpu);
 /**
  * qemu_tcg_mttcg_enabled:
  * Check whether we are running MultiThread TCG or not.

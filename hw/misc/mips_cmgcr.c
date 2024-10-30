@@ -73,7 +73,7 @@ static inline void update_gic_base(MIPSGCRState *gcr, uint64_t val)
 static uint64_t gcr_read(void *opaque, hwaddr addr, unsigned size)
 {
     MIPSGCRState *gcr = (MIPSGCRState *) opaque;
-    MIPSGCRVPState *current_vps = &gcr->vps[current_cpu->cpu_index];
+    MIPSGCRVPState *current_vps = &gcr->vps[get_current_cpu_ptr()->cpu_index];
     MIPSGCRVPState *other_vps = &gcr->vps[current_vps->other];
 
     switch (addr) {
@@ -127,7 +127,7 @@ static inline target_ulong get_exception_base(MIPSGCRVPState *vps)
 static void gcr_write(void *opaque, hwaddr addr, uint64_t data, unsigned size)
 {
     MIPSGCRState *gcr = (MIPSGCRState *)opaque;
-    MIPSGCRVPState *current_vps = &gcr->vps[current_cpu->cpu_index];
+    MIPSGCRVPState *current_vps = &gcr->vps[get_current_cpu_ptr()->cpu_index];
     MIPSGCRVPState *other_vps = &gcr->vps[current_vps->other];
 
     switch (addr) {
@@ -142,7 +142,7 @@ static void gcr_write(void *opaque, hwaddr addr, uint64_t data, unsigned size)
         break;
     case MIPS_CLCB_OFS + GCR_CL_RESETBASE_OFS:
         current_vps->reset_base = data & GCR_CL_RESET_BASE_MSK;
-        cpu_set_exception_base(current_cpu->cpu_index,
+        cpu_set_exception_base(get_current_cpu_ptr()->cpu_index,
                                get_exception_base(current_vps));
         break;
     case MIPS_COCB_OFS + GCR_CL_RESETBASE_OFS:

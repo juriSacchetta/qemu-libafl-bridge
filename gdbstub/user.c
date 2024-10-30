@@ -22,6 +22,8 @@
 #include "trace.h"
 #include "internals.h"
 
+extern CPUState *get_thread_cpu_ptr(void);
+
 #define GDB_NR_SYSCALLS 1024
 typedef unsigned long GDBSyscallsMask[BITS_TO_LONGS(GDB_NR_SYSCALLS)];
 

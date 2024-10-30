@@ -76,7 +76,7 @@ static MemTxResult cchip_read(void *opaque, hwaddr addr,
                               uint64_t *data, unsigned size,
                               MemTxAttrs attrs)
 {
-    CPUState *cpu = current_cpu;
+    CPUState *cpu = get_current_cpu_ptr();
     TyphoonState *s = opaque;
     uint64_t ret = 0;
 

@@ -100,7 +100,7 @@ CPUState* libafl_qemu_current_cpu(void)
         return libafl_last_exit_cpu();
     }
 #endif
-    return current_cpu;
+    return get_current_cpu_ptr();
 }
 
 int libafl_qemu_cpu_index(CPUState* cpu)

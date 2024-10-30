@@ -427,7 +427,7 @@ static hwaddr memory_region_to_absolute_addr(MemoryRegion *mr, hwaddr offset)
 static int get_cpu_index(void)
 {
     if (current_cpu) {
-        return current_cpu->cpu_index;
+        return get_current_cpu_ptr()->cpu_index;
     }
     return -1;
 }

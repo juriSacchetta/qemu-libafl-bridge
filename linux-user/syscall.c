@@ -6604,7 +6604,7 @@ static void *clone_func(void *arg)
 #ifdef QEMU_FIBERS
     //pth_set_cpu(cpu);
 #endif
-    get_thread_cpu_ptr() = cpu;
+    set_thread_cpu_ptr(cpu);
     ts = get_task_state(cpu);
     task_settid(ts);
     if (info->child_tidptr)
@@ -9234,7 +9234,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
 
             qemu_mutex_unlock(&clone_lock);
 
-            get_thread_cpu_ptr() = NULL;
+            set_thread_cpu_ptr(NULL);
             g_free(ts);
 #ifdef QEMU_FIBERS
             fiber_exit(false);

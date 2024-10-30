@@ -182,10 +182,10 @@ static void wake_blocked_threads(ITCStorageCell *c)
 static G_NORETURN
 void block_thread_and_exit(ITCStorageCell *c)
 {
-    c->blocked_threads |= 1ULL << current_cpu->cpu_index;
-    current_cpu->halted = 1;
-    current_cpu->exception_index = EXCP_HLT;
-    cpu_loop_exit_restore(current_cpu, current_cpu->mem_io_pc);
+    c->blocked_threads |= 1ULL << get_current_cpu_ptr()->cpu_index;
+    get_current_cpu_ptr()->halted = 1;
+    get_current_cpu_ptr()->exception_index = EXCP_HLT;
+    cpu_loop_exit_restore(current_cpu, get_current_cpu_ptr()->mem_io_pc);
 }
 
 /* ITC Bypass View */
@@ -369,7 +369,7 @@ static void view_pv_try_write(ITCStorageCell *c)
 
 static void raise_exception(int excp)
 {
-    current_cpu->exception_index = excp;
+    get_current_cpu_ptr()->exception_index = excp;
     cpu_loop_exit(current_cpu);
 }
 

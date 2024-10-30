@@ -1688,7 +1688,7 @@ static int whpx_vcpu_run(CPUState *cpu)
 
     if (exclusive_step_mode != WHPX_STEP_NONE) {
         start_exclusive();
-        g_assert(cpu == current_cpu);
+        g_assert(cpu == get_current_cpu_ptr());
         g_assert(!cpu->running);
         cpu->running = true;
 
