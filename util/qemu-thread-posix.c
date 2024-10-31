@@ -116,14 +116,10 @@ void qemu_mutex_lock_impl(QemuMutex *mutex, const char *file, const int line)
 
 int qemu_mutex_trylock_impl(QemuMutex *mutex, const char *file, const int line)
 {
-    int err;
-
     assert(mutex->initialized);
 #ifndef QEMU_FIBERS
+    int err;
     err = pthread_mutex_trylock(&mutex->lock);
-#else
-    err = pth_mutex_acquire(&mutex->lock, TRUE, NULL);
-#endif
     if (err == 0) {
         qemu_mutex_post_lock(mutex, file, line);
         return 0;
@@ -131,6 +127,17 @@ int qemu_mutex_trylock_impl(QemuMutex *mutex, const char *file, const int line)
     if (err != EBUSY) {
         error_exit(err, __func__);
     }
+#else
+    int success = pth_mutex_acquire(&mutex->lock, TRUE, NULL);
+    if (success) {
+        qemu_mutex_post_lock(mutex, file, line);
+        return 0;
+    }
+    if (success != EBUSY) {
+        error_exit(success, __func__);
+    }
+#endif
+
     return -EBUSY;
 }
 
@@ -751,11 +758,11 @@ int qemu_thread_get_affinity(QemuThread *thread, unsigned long **host_cpus,
 
 void qemu_thread_get_self(QemuThread *thread)
 {
-    #ifndef QEMU_FIBERS
+#ifndef QEMU_FIBERS
     thread->thread = pthread_self();
-    #else
+#else
     thread->thread = pth_self();
-    #endif
+#endif
 }
 
 bool qemu_thread_is_self(QemuThread *thread)
