@@ -16,6 +16,7 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
+
 #include "qemu/osdep.h"
 #include "qemu/help-texts.h"
 #include "qemu/units.h"
@@ -73,7 +74,6 @@
 #ifdef QEMU_FIBERS
 #include "fibers/fibers.h"
 #endif
-
 
 char *exec_path;
 char real_exec_path[PATH_MAX];
@@ -189,15 +189,15 @@ void fork_end(pid_t pid)
 #ifndef QEMU_FIBERS
 static __thread CPUState *thread_cpu;
 CPUState* get_thread_cpu_ptr(void) {return thread_cpu;}
-void set_thread_cpu_ptr(CPUState *cpu) {thread_cpu = cpu}
+void set_thread_cpu_ptr(CPUState *cpu) {thread_cpu = cpu;}
 #else
 CPUState* get_thread_cpu_ptr(void) {
     void *tls = pth_get_tls();
-    return ((CPUState **)tls)[THREAD_CPU];
+    return ((CPUState **)tls)[THREAD_CPU_TLS];
 }
 void set_thread_cpu_ptr(CPUState *cpu) {
     void *tls = pth_get_tls();
-    ((CPUState **)tls)[THREAD_CPU] = cpu;
+    ((CPUState **)tls)[THREAD_CPU_TLS] = cpu;
 }
 #endif
 
@@ -744,6 +744,8 @@ int main(int argc, char **argv, char **envp)
 
 #ifdef QEMU_FIBERS
     pth_init();
+//TODO: create an init api for threads
+    qemu_tls_init();
 #endif
 
     error_init(argv[0]);
@@ -867,10 +869,6 @@ int main(int argc, char **argv, char **envp)
     cpu = cpu_create(cpu_type);
     env = cpu_env(cpu);
     cpu_reset(cpu);
-#ifdef QEMU_FIBERS
-    //TODO: create an init api for threads
-    qemu_tls_init();
-#endif
     set_thread_cpu_ptr(cpu);
 
     /*

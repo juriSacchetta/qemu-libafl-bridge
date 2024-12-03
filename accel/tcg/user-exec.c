@@ -33,19 +33,22 @@
 #include "internal-target.h"
 
 #ifndef QEMU_FIBERS
-__thread uintptr_t helper_retaddr;
-uintptr_t get_helper_retaddr(void) {
+static __thread uintptr_t helper_retaddr;
+uintptr_t get_helper_retaddr_tls(void) {
     return helper_retaddr;
+}
+void set_helper_retaddr_tls(uintptr_t helper) {
+    helper_retaddr = helper;
 }
 #else
 uintptr_t get_helper_retaddr_tls(void) {
     void **tls = pth_get_tls();
-    return (uintptr_t)tls[HELPER_RETADD];
+    return (uintptr_t)tls[HELPER_RETADD_TLS];
 }
 
 void set_helper_retaddr_tls(uintptr_t helper) {
     void **tls = pth_get_tls();
-    tls[HELPER_RETADD] = (void *)helper;
+    tls[HELPER_RETADD_TLS] = (void *)helper;
 }
 #endif
 //#define DEBUG_SIGNAL

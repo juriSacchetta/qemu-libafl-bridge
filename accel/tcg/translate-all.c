@@ -134,9 +134,9 @@ static int64_t decode_sleb128(const uint8_t **pp)
 
 static int encode_search(TranslationBlock *tb, uint8_t *block)
 {
-    uint8_t *highwater = tcg_ctx->code_gen_highwater;
-    uint64_t *insn_data = tcg_ctx->gen_insn_data;
-    uint16_t *insn_end_off = tcg_ctx->gen_insn_end_off;
+    uint8_t *highwater = get_tcg_ctx()->code_gen_highwater;
+    uint64_t *insn_data = get_tcg_ctx()->gen_insn_data;
+    uint16_t *insn_end_off = get_tcg_ctx()->gen_insn_end_off;
     uint8_t *p = block;
     int i, j, n;
 
@@ -274,14 +274,14 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
                            vaddr pc, void *host_pc,
                            int *max_insns, int64_t *ti)
 {
-    int ret = sigsetjmp(tcg_ctx->jmp_trans, 0);
+    int ret = sigsetjmp(get_tcg_ctx()->jmp_trans, 0);
     if (unlikely(ret != 0)) {
         return ret;
     }
 
-    tcg_func_start(tcg_ctx);
+    tcg_func_start(get_tcg_ctx());
 
-    tcg_ctx->cpu = env_cpu(env);
+    get_tcg_ctx()->cpu = env_cpu(env);
 
     //// --- Begin LibAFL code ---
 
@@ -291,10 +291,10 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
 
     gen_intermediate_code(env_cpu(env), tb, max_insns, pc, host_pc);
     assert(tb->size != 0);
-    tcg_ctx->cpu = NULL;
+    get_tcg_ctx()->cpu = NULL;
     *max_insns = tb->icount;
 
-    return tcg_gen_code(tcg_ctx, tb, pc);
+    return tcg_gen_code(get_tcg_ctx(), tb, pc);
 }
 
 //// --- Begin LibAFL code ---
@@ -323,14 +323,14 @@ static int libafl_setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
                            vaddr pc, void *host_pc,
                            int *max_insns, int64_t *ti)
 {
-    int ret = sigsetjmp(tcg_ctx->jmp_trans, 0);
+    int ret = sigsetjmp(get_tcg_ctx()->jmp_trans, 0);
     if (unlikely(ret != 0)) {
         return ret;
     }
 
-    tcg_func_start(tcg_ctx);
+    tcg_func_start(get_tcg_ctx());
 
-    tcg_ctx->cpu = env_cpu(env);
+    get_tcg_ctx()->cpu = env_cpu(env);
 
     // -- start gen_intermediate_code
     const int num_insns = 1; // do "as-if" we were translating a single target instruction
@@ -358,10 +358,10 @@ static int libafl_setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
     // -- end gen_intermediate_code
 
     assert(tb->size != 0);
-    tcg_ctx->cpu = NULL;
+    get_tcg_ctx()->cpu = NULL;
     *max_insns = tb->icount;
 
-    return tcg_gen_code(tcg_ctx, tb, pc);
+    return tcg_gen_code(get_tcg_ctx(), tb, pc);
 }
 
 /* Called with mmap_lock held for user mode emulation.  */
@@ -412,7 +412,7 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
 
  buffer_overflow:
     assert_no_pages_locked();
-    tb = tcg_tb_alloc(tcg_ctx);
+    tb = tcg_tb_alloc(get_tcg_ctx());
     if (unlikely(!tb)) {
         /* flush must be done */
         tb_flush(cpu);
@@ -422,7 +422,7 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
         cpu_loop_exit(cpu);
     }
 
-    gen_code_buf = tcg_ctx->code_gen_ptr;
+    gen_code_buf = get_tcg_ctx()->code_gen_ptr;
     tb->tc.ptr = tcg_splitwx_to_rx(gen_code_buf);
 
     if (!(cflags & CF_PCREL)) {
@@ -438,18 +438,18 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
     //     tb_lock_page0(phys_pc);
     // }
 
-    tcg_ctx->gen_tb = tb;
-    tcg_ctx->addr_type = TARGET_LONG_BITS == 32 ? TCG_TYPE_I32 : TCG_TYPE_I64;
+    get_tcg_ctx()->gen_tb = tb;
+    get_tcg_ctx()->addr_type = TARGET_LONG_BITS == 32 ? TCG_TYPE_I32 : TCG_TYPE_I64;
 #ifdef CONFIG_SOFTMMU
-    tcg_ctx->page_bits = TARGET_PAGE_BITS;
-    tcg_ctx->page_mask = TARGET_PAGE_MASK;
-    tcg_ctx->tlb_dyn_max_bits = CPU_TLB_DYN_MAX_BITS;
+    get_tcg_ctx()->page_bits = TARGET_PAGE_BITS;
+    get_tcg_ctx()->page_mask = TARGET_PAGE_MASK;
+    get_tcg_ctx()->tlb_dyn_max_bits = CPU_TLB_DYN_MAX_BITS;
 #endif
-    tcg_ctx->insn_start_words = TARGET_INSN_START_WORDS;
+    get_tcg_ctx()->insn_start_words = TARGET_INSN_START_WORDS;
 #ifdef TCG_GUEST_DEFAULT_MO
-    tcg_ctx->guest_mo = TCG_GUEST_DEFAULT_MO;
+    get_tcg_ctx()->guest_mo = TCG_GUEST_DEFAULT_MO;
 #else
-    tcg_ctx->guest_mo = TCG_MO_ALL;
+    get_tcg_ctx()->guest_mo = TCG_MO_ALL;
 #endif
 
  restart_translate:
@@ -472,7 +472,7 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
                               "Restarting code generation for "
                               "code_gen_buffer overflow\n");
                 tb_unlock_pages(tb);
-                tcg_ctx->gen_tb = NULL;
+                get_tcg_ctx()->gen_tb = NULL;
                 goto buffer_overflow;
 
             case -2:
@@ -520,7 +520,7 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
                 g_assert_not_reached();
         }
     }
-    tcg_ctx->gen_tb = NULL;
+    get_tcg_ctx()->gen_tb = NULL;
 
     search_size = encode_search(tb, (void *)gen_code_buf + gen_code_size);
     if (unlikely(search_size < 0)) {
@@ -535,7 +535,7 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
      */
     perf_report_code(pc, tb, tcg_splitwx_to_rx(gen_code_buf));
 
-    qatomic_set(&tcg_ctx->code_gen_ptr, (void *)
+    qatomic_set(&get_tcg_ctx()->code_gen_ptr, (void *)
         ROUND_UP((uintptr_t)gen_code_buf + gen_code_size + search_size,
                  CODE_GEN_ALIGN));
 
@@ -596,7 +596,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
 
  buffer_overflow:
     assert_no_pages_locked();
-    tb = tcg_tb_alloc(tcg_ctx);
+    tb = tcg_tb_alloc(get_tcg_ctx());
     if (unlikely(!tb)) {
         /* flush must be done */
         tb_flush(cpu);
@@ -606,7 +606,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
         cpu_loop_exit(cpu);
     }
 
-    gen_code_buf = tcg_ctx->code_gen_ptr;
+    gen_code_buf = get_tcg_ctx()->code_gen_ptr;
     tb->tc.ptr = tcg_splitwx_to_rx(gen_code_buf);
 
 //// --- Begin LibAFL code ---
@@ -625,18 +625,18 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
         tb_lock_page0(phys_pc);
     }
 
-    tcg_ctx->gen_tb = tb;
-    tcg_ctx->addr_type = TARGET_LONG_BITS == 32 ? TCG_TYPE_I32 : TCG_TYPE_I64;
+    get_tcg_ctx()->gen_tb = tb;
+    get_tcg_ctx()->addr_type = TARGET_LONG_BITS == 32 ? TCG_TYPE_I32 : TCG_TYPE_I64;
 #ifdef CONFIG_SOFTMMU
-    tcg_ctx->page_bits = TARGET_PAGE_BITS;
-    tcg_ctx->page_mask = TARGET_PAGE_MASK;
-    tcg_ctx->tlb_dyn_max_bits = CPU_TLB_DYN_MAX_BITS;
+    get_tcg_ctx()->page_bits = TARGET_PAGE_BITS;
+    get_tcg_ctx()->page_mask = TARGET_PAGE_MASK;
+    get_tcg_ctx()->tlb_dyn_max_bits = CPU_TLB_DYN_MAX_BITS;
 #endif
-    tcg_ctx->insn_start_words = TARGET_INSN_START_WORDS;
+    get_tcg_ctx()->insn_start_words = TARGET_INSN_START_WORDS;
 #ifdef TCG_GUEST_DEFAULT_MO
-    tcg_ctx->guest_mo = TCG_GUEST_DEFAULT_MO;
+    get_tcg_ctx()->guest_mo = TCG_GUEST_DEFAULT_MO;
 #else
-    tcg_ctx->guest_mo = TCG_MO_ALL;
+    get_tcg_ctx()->guest_mo = TCG_MO_ALL;
 #endif
 
  restart_translate:
@@ -659,7 +659,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
                           "Restarting code generation for "
                           "code_gen_buffer overflow\n");
             tb_unlock_pages(tb);
-            tcg_ctx->gen_tb = NULL;
+            get_tcg_ctx()->gen_tb = NULL;
             goto buffer_overflow;
 
         case -2:
@@ -706,7 +706,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
             g_assert_not_reached();
         }
     }
-    tcg_ctx->gen_tb = NULL;
+    get_tcg_ctx()->gen_tb = NULL;
 
     search_size = encode_search(tb, (void *)gen_code_buf + gen_code_size);
     if (unlikely(search_size < 0)) {
@@ -736,8 +736,8 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
             size_t chunk_start;
             int insn = 0;
 
-            if (tcg_ctx->data_gen_ptr) {
-                rx_data_gen_ptr = tcg_splitwx_to_rx(tcg_ctx->data_gen_ptr);
+            if (get_tcg_ctx()->data_gen_ptr) {
+                rx_data_gen_ptr = tcg_splitwx_to_rx(get_tcg_ctx()->data_gen_ptr);
                 code_size = (const void *)rx_data_gen_ptr - tb->tc.ptr;
                 data_size = gen_code_size - code_size;
             } else {
@@ -750,8 +750,8 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
             fprintf(logfile, "OUT: [size=%d]\n", gen_code_size);
             fprintf(logfile,
                     "  -- guest addr 0x%016" PRIx64 " + tb prologue\n",
-                    tcg_ctx->gen_insn_data[insn * TARGET_INSN_START_WORDS]);
-            chunk_start = tcg_ctx->gen_insn_end_off[insn];
+                    get_tcg_ctx()->gen_insn_data[insn * TARGET_INSN_START_WORDS]);
+            chunk_start = get_tcg_ctx()->gen_insn_end_off[insn];
             disas(logfile, tb->tc.ptr, chunk_start);
 
             /*
@@ -760,10 +760,10 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
              * first entry is the beginning of the 2nd instruction.
              */
             while (insn < tb->icount) {
-                size_t chunk_end = tcg_ctx->gen_insn_end_off[insn];
+                size_t chunk_end = get_tcg_ctx()->gen_insn_end_off[insn];
                 if (chunk_end > chunk_start) {
                     fprintf(logfile, "  -- guest addr 0x%016" PRIx64 "\n",
-                            tcg_ctx->gen_insn_data[insn * TARGET_INSN_START_WORDS]);
+                            get_tcg_ctx()->gen_insn_data[insn * TARGET_INSN_START_WORDS]);
                     disas(logfile, tb->tc.ptr + chunk_start,
                           chunk_end - chunk_start);
                     chunk_start = chunk_end;
@@ -800,7 +800,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
         }
     }
 
-    qatomic_set(&tcg_ctx->code_gen_ptr, (void *)
+    qatomic_set(&get_tcg_ctx()->code_gen_ptr, (void *)
         ROUND_UP((uintptr_t)gen_code_buf + gen_code_size + search_size,
                  CODE_GEN_ALIGN));
 
@@ -849,7 +849,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
         uintptr_t orig_aligned = (uintptr_t)gen_code_buf;
 
         orig_aligned -= ROUND_UP(sizeof(*tb), qemu_icache_linesize);
-        qatomic_set(&tcg_ctx->code_gen_ptr, (void *)orig_aligned);
+        qatomic_set(&get_tcg_ctx()->code_gen_ptr, (void *)orig_aligned);
         tcg_tb_remove(tb);
         return existing_tb;
     }

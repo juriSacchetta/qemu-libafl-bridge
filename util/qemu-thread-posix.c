@@ -776,7 +776,13 @@ bool qemu_thread_is_self(QemuThread *thread)
 
 void qemu_thread_exit(void *retval)
 {
+#ifdef QEMU_FIBERS
+    void **tls = pth_get_tls();
+    g_free(tls);
+    pth_exit(retval);
+#else
     pthread_exit(retval);
+#endif
 }
 
 void *qemu_thread_join(QemuThread *thread)
@@ -800,8 +806,11 @@ void *qemu_thread_join(QemuThread *thread)
 #ifdef QEMU_FIBERS
 #include "qemu/rcu.h"
 void qemu_tls_init(void) {
-    if(pth_get_tls() != NULL) return;
-    void *tls = malloc(TLS_SIZE * sizeof(void *));
+    void **tls = pth_get_tls();
+    if(tls != NULL)
+        return;
+    tls = g_malloc(TLS_SIZE * sizeof(void *));
+    memset(tls, 0, TLS_SIZE * sizeof(void *));
     pth_set_tls(tls);
 }
 

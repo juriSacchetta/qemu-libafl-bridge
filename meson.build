@@ -3569,8 +3569,6 @@ endif
 common_ss.add(pagevary)
 specific_ss.add(files('page-vary-target.c'))
 
-subdir('fibers')
-
 subdir('backends')
 subdir('disas')
 subdir('migration')
@@ -3590,6 +3588,7 @@ common_user_inc = []
 subdir('common-user')
 subdir('bsd-user')
 subdir('linux-user')
+subdir('fibers')
 
 # needed for fuzzing binaries
 #### --- Begin LibAFL code ---
@@ -3939,7 +3938,7 @@ foreach target : target_dirs
                  dependencies: arch_deps,
                  objects: objects,
                  include_directories: target_inc,
-                 c_args: c_args + ['-Wno-error=comment'],
+                 c_args: c_args,
                  build_by_default: false,
                  name_suffix: 'fa',
                  pic: 'AS_SHARED_LIB' in config_host)

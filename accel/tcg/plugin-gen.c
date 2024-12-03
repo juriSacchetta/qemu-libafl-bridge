@@ -250,7 +250,7 @@ static TCGOp *rm_ops_range(TCGOp *begin, TCGOp *end)
 {
     TCGOp *ret = QTAILQ_NEXT(end, link);
 
-    QTAILQ_REMOVE_SEVERAL(&tcg_ctx->ops, begin, end, link);
+    QTAILQ_REMOVE_SEVERAL(&get_tcg_ctx()->ops, begin, end, link);
     return ret;
 }
 
@@ -269,7 +269,7 @@ static TCGOp *copy_op_nocheck(TCGOp **begin_op, TCGOp *op)
     unsigned nargs = old_op->nargs;
 
     *begin_op = old_op;
-    op = tcg_op_insert_after(tcg_ctx, op, old_op->opc, nargs);
+    op = tcg_op_insert_after(get_tcg_ctx(), op, old_op->opc, nargs);
     memcpy(op->args, old_op->args, sizeof(op->args[0]) * nargs);
 
     return op;
@@ -630,7 +630,7 @@ void plugin_gen_disable_mem_helpers(void)
      * Note: we do not reset plugin_tb->mem_helper here; a TB might have several
      * exit points, and we want to emit the clearing from all of them.
      */
-    if (!tcg_ctx->plugin_tb->mem_helper) {
+    if (!get_tcg_ctx()->plugin_tb->mem_helper) {
         return;
     }
     tcg_gen_st_ptr(tcg_constant_ptr(NULL), tcg_env,
@@ -717,7 +717,7 @@ static void pr_ops(void)
     TCGOp *op;
     int i = 0;
 
-    QTAILQ_FOREACH(op, &tcg_ctx->ops, link) {
+    QTAILQ_FOREACH(op, &get_tcg_ctx()->ops, link) {
         const char *name = "";
         const char *type = "";
 
@@ -771,7 +771,7 @@ static void plugin_gen_inject(struct qemu_plugin_tb *plugin_tb)
 
     pr_ops();
 
-    QTAILQ_FOREACH(op, &tcg_ctx->ops, link) {
+    QTAILQ_FOREACH(op, &get_tcg_ctx()->ops, link) {
         switch (op->opc) {
         case INDEX_op_insn_start:
             insn_idx++;
@@ -872,7 +872,7 @@ bool plugin_gen_tb_start(CPUState *cpu, const DisasContextBase *db,
     bool ret = false;
 
     if (test_bit(QEMU_PLUGIN_EV_VCPU_TB_TRANS, cpu->plugin_state->event_mask)) {
-        struct qemu_plugin_tb *ptb = tcg_ctx->plugin_tb;
+        struct qemu_plugin_tb *ptb = get_tcg_ctx()->plugin_tb;
         int i;
 
         /* reset callbacks */
@@ -895,18 +895,18 @@ bool plugin_gen_tb_start(CPUState *cpu, const DisasContextBase *db,
         plugin_gen_empty_callback(PLUGIN_GEN_FROM_TB);
     }
 
-    tcg_ctx->plugin_insn = NULL;
+    get_tcg_ctx()->plugin_insn = NULL;
 
     return ret;
 }
 
 void plugin_gen_insn_start(CPUState *cpu, const DisasContextBase *db)
 {
-    struct qemu_plugin_tb *ptb = tcg_ctx->plugin_tb;
+    struct qemu_plugin_tb *ptb = get_tcg_ctx()->plugin_tb;
     struct qemu_plugin_insn *pinsn;
 
     pinsn = qemu_plugin_tb_insn_get(ptb, db->pc_next);
-    tcg_ctx->plugin_insn = pinsn;
+    get_tcg_ctx()->plugin_insn = pinsn;
     plugin_gen_empty_callback(PLUGIN_GEN_FROM_INSN);
 
     /*
@@ -940,7 +940,7 @@ void plugin_gen_insn_end(void)
  */
 void plugin_gen_tb_end(CPUState *cpu, size_t num_insns)
 {
-    struct qemu_plugin_tb *ptb = tcg_ctx->plugin_tb;
+    struct qemu_plugin_tb *ptb = get_tcg_ctx()->plugin_tb;
 
     /* translator may have removed instructions, update final count */
     g_assert(num_insns <= ptb->n);

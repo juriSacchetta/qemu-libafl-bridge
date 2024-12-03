@@ -46,13 +46,13 @@ void libafl_gen_write(TCGTemp *addr, MemOpIdx oi);
  * is assumed to be expanded with the given VECE.
  *
  * For debugging, we want to validate this array.  Therefore, when
- * tcg_ctx->vec_opt_opc is non-NULL, the tcg_gen_*_vec expanders
+ * get_tcg_ctx()->vec_opt_opc is non-NULL, the tcg_gen_*_vec expanders
  * will validate that their opcode is present in the list.
  */
 static void tcg_assert_listed_vecop(TCGOpcode op)
 {
 #ifdef CONFIG_DEBUG_TCG
-    const TCGOpcode *p = tcg_ctx->vecop_list;
+    const TCGOpcode *p = get_tcg_ctx()->vecop_list;
     if (p) {
         for (; *p; ++p) {
             if (*p == op) {

@@ -6601,9 +6601,6 @@ static void *clone_func(void *arg)
 #endif
     env = info->env;
     cpu = env_cpu(env);
-#ifdef QEMU_FIBERS
-    //pth_set_cpu(cpu);
-#endif
     set_thread_cpu_ptr(cpu);
     ts = get_task_state(cpu);
     task_settid(ts);
@@ -6723,9 +6720,9 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         //FIXME: To have a correct emulation it could be fail and return -1
         qemu_thread_create(&info.thread, NULL, clone_func, &info, PTHREAD_CREATE_DETACHED);
 
-        /* Wait for the child to initialize.  */
+            /* Wait for the child to initialize.  */
         qemu_cond_wait(&info.cond, &info.mutex);
-        ret = info.tid;
+            ret = info.tid;
 
         qemu_mutex_unlock(&info.mutex);
         qemu_cond_destroy(&info.cond);
@@ -9261,7 +9258,8 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
                 return get_errno(safe_read(arg1, 0, 0));
 #endif
             } else {
-                if (!(p = lock_user(VERIFY_WRITE, arg2, arg3, 0))) return -TARGET_EFAULT;
+                if (!(p = lock_user(VERIFY_WRITE, arg2, arg3, 0)))
+                    return -TARGET_EFAULT;
 #ifdef QEMU_FIBERS
                 ret = get_errno(fiber_syscall(read)(arg1, p, arg3));
 #else

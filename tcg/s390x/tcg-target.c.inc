@@ -1689,7 +1689,7 @@ bool tcg_target_has_memory_bswap(MemOp memop)
      * Reject 16-byte memop with 16-byte atomicity,
      * but do allow a pair of 64-bit operations.
      */
-    aa = atom_and_align_for_opc(tcg_ctx, memop, MO_ATOM_IFALIGN, true);
+    aa = atom_and_align_for_opc(get_tcg_ctx(), memop, MO_ATOM_IFALIGN, true);
     return aa.atom <= MO_64;
 }
 

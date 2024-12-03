@@ -25,19 +25,20 @@ typedef struct QemuThread QemuThread;
 
 #ifdef QEMU_FIBERS 
 #define QEMU_MUTEX_INITIALIZER {PTH_MUTEX_INIT, 1}
-#define QEMU_REC_MUTEX_INITIALIZER {QEMU_MUTEX_INITIALIZER}
 #define QEMU_COND_INITIALIZER {PTH_COND_INIT, 1}
-#define THREAD_CPU 0
-#define CURRENT_CPU 1
-#define HELPER_RETADD 2
-#define TLS_MMAP_LOCK_COUNT 3
-#define TLS_SIZE (TLS_MMAP_LOCK_COUNT + 1)
+#define THREAD_CPU_TLS 0
+#define CURRENT_CPU_TLS 1
+#define HELPER_RETADD_TLS 2
+#define TCG_CTX_TLS 3
+#define TLS_SIZE (TCG_CTX_TLS + 1)
 void qemu_tls_init(void);
 bool qemu_mutex_am_i_the_owner(QemuRecMutex *mutex);
 #else
 #define QEMU_MUTEX_INITIALIZER {PTHREAD_MUTEX_INITIALIZER, 1}
 #define QEMU_COND_INITIALIZER {PTHREAD_COND_INITIALIZER, 1}
 #endif
+
+#define QEMU_REC_MUTEX_INITIALIZER {QEMU_MUTEX_INITIALIZER}
 
 void qemu_mutex_init(QemuMutex *mutex);
 void qemu_mutex_destroy(QemuMutex *mutex);
@@ -212,7 +213,10 @@ int qemu_thread_get_affinity(QemuThread *thread, unsigned long **host_cpus,
 void *qemu_thread_join(QemuThread *thread);
 void qemu_thread_get_self(QemuThread *thread);
 bool qemu_thread_is_self(QemuThread *thread);
-G_NORETURN void qemu_thread_exit(void *retval);
+#ifndef QEMU_FIBERS
+G_NORETURN 
+#endif
+void qemu_thread_exit(void *retval);
 void qemu_thread_naming(bool enable);
 
 struct Notifier;

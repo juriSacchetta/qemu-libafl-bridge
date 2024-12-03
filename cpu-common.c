@@ -124,16 +124,16 @@ CPUState *qemu_get_cpu(int index)
 #ifndef QEMU_FIBERS
 static __thread CPUState *current_cpu;
 CPUState* get_current_cpu_ptr(void) {return current_cpu;}
-void set_current_cpu_ptr(CPUState *cpu) {current_cpu = cpu}
+void set_current_cpu_ptr(CPUState *cpu) {current_cpu = cpu;}
 #else
 CPUState* get_current_cpu_ptr(void) {
     void **tls = pth_get_tls();
-    void *cpu = tls[CURRENT_CPU];
+    void *cpu = tls[CURRENT_CPU_TLS];
     return (CPUState *)cpu;
 }
 void set_current_cpu_ptr(CPUState *cpu) {
     void **tls = pth_get_tls();
-    tls[CURRENT_CPU] = (void *)cpu;
+    tls[CURRENT_CPU_TLS] = (void *)cpu;
 }
 #endif
 

@@ -433,7 +433,7 @@ void tb_lock_page1(tb_page_addr_t paddr0, tb_page_addr_t paddr1)
     page_unlock(pd0);
     page_lock(pd1);
     page_lock(pd0);
-    siglongjmp(tcg_ctx->jmp_trans, -3);
+    siglongjmp(get_tcg_ctx()->jmp_trans, -3);
 }
 
 void tb_unlock_page1(tb_page_addr_t paddr0, tb_page_addr_t paddr1)

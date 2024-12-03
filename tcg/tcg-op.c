@@ -296,7 +296,7 @@ void tcg_gen_br(TCGLabel *l)
 void tcg_gen_mb(TCGBar mb_type)
 {
 #ifdef CONFIG_USER_ONLY
-    bool parallel = tcg_ctx->gen_tb->cflags & CF_PARALLEL;
+    bool parallel = get_tcg_ctx()->gen_tb->cflags & CF_PARALLEL;
 #else
     /*
      * It is tempting to elide the barrier in a uniprocessor context.
@@ -3305,7 +3305,7 @@ void tcg_gen_exit_tb(const TranslationBlock *tb, unsigned idx)
 #ifdef CONFIG_DEBUG_TCG
         /* This is an exit following a goto_tb.  Verify that we have
            seen this numbered exit before, via tcg_gen_goto_tb.  */
-        tcg_debug_assert(tcg_ctx->goto_tb_issue_mask & (1 << idx));
+        tcg_debug_assert(get_tcg_ctx()->goto_tb_issue_mask & (1 << idx));
 #endif
     } else {
         /* This is an exit via the exitreq label.  */
@@ -3318,13 +3318,13 @@ void tcg_gen_exit_tb(const TranslationBlock *tb, unsigned idx)
 void tcg_gen_goto_tb(unsigned idx)
 {
     /* We tested CF_NO_GOTO_TB in translator_use_goto_tb. */
-    tcg_debug_assert(!(tcg_ctx->gen_tb->cflags & CF_NO_GOTO_TB));
+    tcg_debug_assert(!(get_tcg_ctx()->gen_tb->cflags & CF_NO_GOTO_TB));
     /* We only support two chained exits.  */
     tcg_debug_assert(idx <= TB_EXIT_IDXMAX);
 #ifdef CONFIG_DEBUG_TCG
     /* Verify that we haven't seen this numbered exit before.  */
-    tcg_debug_assert((tcg_ctx->goto_tb_issue_mask & (1 << idx)) == 0);
-    tcg_ctx->goto_tb_issue_mask |= 1 << idx;
+    tcg_debug_assert((get_tcg_ctx()->goto_tb_issue_mask & (1 << idx)) == 0);
+    get_tcg_ctx()->goto_tb_issue_mask |= 1 << idx;
 #endif
     plugin_gen_disable_mem_helpers();
     tcg_gen_op1i(INDEX_op_goto_tb, idx);
@@ -3334,7 +3334,7 @@ void tcg_gen_lookup_and_goto_ptr(void)
 {
     TCGv_ptr ptr;
 
-    if (tcg_ctx->gen_tb->cflags & CF_NO_GOTO_PTR) {
+    if (get_tcg_ctx()->gen_tb->cflags & CF_NO_GOTO_PTR) {
         tcg_gen_exit_tb(NULL, 0);
         return;
     }

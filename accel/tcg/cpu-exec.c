@@ -544,9 +544,9 @@ static void cpu_exec_longjmp_cleanup(CPUState *cpu)
      * capture the cpu_loop_exit longjmp, perform the cleanup, and
      * jump again to arrive here.
      */
-    if (tcg_ctx->gen_tb) {
-        tb_unlock_pages(tcg_ctx->gen_tb);
-        tcg_ctx->gen_tb = NULL;
+    if (get_tcg_ctx()->gen_tb) {
+        tb_unlock_pages(get_tcg_ctx()->gen_tb);
+        get_tcg_ctx()->gen_tb = NULL;
     }
 #endif
     if (bql_locked()) {

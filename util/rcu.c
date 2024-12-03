@@ -65,8 +65,18 @@ static inline int rcu_gp_ongoing(unsigned long *ctr)
 /* Written to only by each individual reader. Read by both the reader and the
  * writers.
  */
+#ifndef QEMU_FIBERS
 QEMU_DEFINE_CO_TLS(struct rcu_reader_data, rcu_reader)
+#else
+#include "fibers/pth/pth.h"
+struct rcu_reader_data* get_ptr_rcu_reader(void) {
+    QemuTLS* tls = pth_get_tls();
+    if(tls == NULL)
+        qemu_tls_init();
 
+    return tls->rcu_reader;
+}
+#endif
 /* Protected by rcu_registry_lock.  */
 typedef QLIST_HEAD(, rcu_reader_data) ThreadList;
 static ThreadList registry = QLIST_HEAD_INITIALIZER(registry);
@@ -466,7 +476,13 @@ static void __attribute__((__constructor__)) rcu_init(void)
 {
     smp_mb_global_init();
 #ifdef CONFIG_POSIX
+#ifndef QEMU_FIBERS
     pthread_atfork(rcu_init_lock, rcu_init_unlock, rcu_init_child);
+#else
+    pth_init();
+    qemu_tls_init();
+    pth_atfork_push((void (*)(void *))rcu_init_lock, (void (*)(void *))rcu_init_unlock, (void (*)(void *))rcu_init_child, NULL);
+#endif
 #endif
     rcu_init_complete();
 }

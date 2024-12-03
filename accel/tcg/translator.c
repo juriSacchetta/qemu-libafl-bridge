@@ -70,10 +70,10 @@ static TCGOp *gen_tb_start(DisasContextBase *db, uint32_t cflags)
      * budget.
      */
     if (cflags & CF_NOIRQ) {
-        tcg_ctx->exitreq_label = NULL;
+        get_tcg_ctx()->exitreq_label = NULL;
     } else {
-        tcg_ctx->exitreq_label = gen_new_label();
-        tcg_gen_brcondi_i32(TCG_COND_LT, count, 0, tcg_ctx->exitreq_label);
+        get_tcg_ctx()->exitreq_label = gen_new_label();
+        tcg_gen_brcondi_i32(TCG_COND_LT, count, 0, get_tcg_ctx()->exitreq_label);
     }
 
     if (cflags & CF_USE_ICOUNT) {
@@ -97,8 +97,8 @@ static void gen_tb_end(const TranslationBlock *tb, uint32_t cflags,
                            tcgv_i32_arg(tcg_constant_i32(num_insns)));
     }
 
-    if (tcg_ctx->exitreq_label) {
-        gen_set_label(tcg_ctx->exitreq_label);
+    if (get_tcg_ctx()->exitreq_label) {
+        gen_set_label(get_tcg_ctx()->exitreq_label);
         tcg_gen_exit_tb(tb, TB_EXIT_REQUESTED);
     }
 }
@@ -256,12 +256,12 @@ post_translate_insn:
         tcg_debug_assert(first_insn_start == db->insn_start);
     } else {
         tcg_debug_assert(first_insn_start != db->insn_start);
-        tcg_ctx->emit_before_op = first_insn_start;
+        get_tcg_ctx()->emit_before_op = first_insn_start;
         set_can_do_io(db, false);
     }
-    tcg_ctx->emit_before_op = db->insn_start;
+    get_tcg_ctx()->emit_before_op = db->insn_start;
     set_can_do_io(db, true);
-    tcg_ctx->emit_before_op = NULL;
+    get_tcg_ctx()->emit_before_op = NULL;
 
     if (plugin_enabled) {
         plugin_gen_tb_end(cpu, db->num_insns);
@@ -351,7 +351,7 @@ static void *translator_access(CPUArchState *env, DisasContextBase *db,
 static void plugin_insn_append(abi_ptr pc, const void *from, size_t size)
 {
 #ifdef CONFIG_PLUGIN
-    struct qemu_plugin_insn *insn = tcg_ctx->plugin_insn;
+    struct qemu_plugin_insn *insn = get_tcg_ctx()->plugin_insn;
     abi_ptr off;
 
     if (insn == NULL) {

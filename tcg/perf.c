@@ -62,13 +62,13 @@ void perf_enable_perfmap(void)
 static void get_host_pc_size(uintptr_t *host_pc, uint16_t *host_size,
                              const void *start, size_t insn)
 {
-    uint16_t start_off = insn ? tcg_ctx->gen_insn_end_off[insn - 1] : 0;
+    uint16_t start_off = insn ? get_tcg_ctx()->gen_insn_end_off[insn - 1] : 0;
 
     if (host_pc) {
         *host_pc = (uintptr_t)start + start_off;
     }
     if (host_size) {
-        *host_size = tcg_ctx->gen_insn_end_off[insn] - start_off;
+        *host_size = get_tcg_ctx()->gen_insn_end_off[insn] - start_off;
     }
 }
 
@@ -278,7 +278,7 @@ static void write_jr_code_debug_info(const void *start,
     }
 
     /* Write the trailing debug_entry. */
-    ent.addr = (uintptr_t)start + tcg_ctx->gen_insn_end_off[icount - 1];
+    ent.addr = (uintptr_t)start + get_tcg_ctx()->gen_insn_end_off[icount - 1];
     ent.lineno = 0;
     ent.discrim = 0;
     fwrite(&ent, sizeof(ent), 1, jitdump);
@@ -328,8 +328,8 @@ void perf_report_code(uint64_t guest_pc, TranslationBlock *tb,
     debuginfo_lock();
 
     /* Query debuginfo for each guest instruction. */
-    gen_insn_data = tcg_ctx->gen_insn_data;
-    start_words = tcg_ctx->insn_start_words;
+    gen_insn_data = get_tcg_ctx()->gen_insn_data;
+    start_words = get_tcg_ctx()->insn_start_words;
 
     for (insn = 0; insn < tb->icount; insn++) {
         /* FIXME: This replicates the restore_state_to_opc() logic. */
@@ -354,7 +354,7 @@ void perf_report_code(uint64_t guest_pc, TranslationBlock *tb,
     if (jitdump) {
         flockfile(jitdump);
         write_jr_code_debug_info(start, q, tb->icount);
-        write_jr_code_load(start, tcg_ctx->gen_insn_end_off[tb->icount - 1],
+        write_jr_code_load(start, get_tcg_ctx()->gen_insn_end_off[tb->icount - 1],
                            q);
         funlockfile(jitdump);
     }

@@ -30,26 +30,50 @@
 #include "target/arm/cpu-features.h"
 #endif
 
+#ifndef QEMU_FIBERS
+static __thread int mmap_lock_count;
+#endif
 static QemuRecMutex mmap_mutex = QEMU_REC_MUTEX_INITIALIZER;
 
 void mmap_lock(void)
 {
+#ifndef QEMU_FIBERS
+    if (mmap_lock_count++ == 0) {
+        qemu_rec_mutex_lock(&mmap_mutex);
+    }
+#else
     qemu_rec_mutex_lock(&mmap_mutex);
+#endif
 }
 
 void mmap_unlock(void)
 {
+#ifndef QEMU_FIBERS
+    assert(mmap_lock_count > 0);
+    if (--mmap_lock_count == 0) {
+        qemu_rec_mutex_unlock(&mmap_mutex);
+    }
+#else
     qemu_rec_mutex_unlock(&mmap_mutex);
+#endif
 }
 
 bool have_mmap_lock(void)
 {
+#ifndef QEMU_FIBERS
+    return mmap_lock_count > 0 ? true : false;
+#else
     return qemu_mutex_am_i_the_owner(&mmap_mutex);
+#endif
 }
 
 /* Grab lock to make sure things are in a consistent state after fork().  */
 void mmap_fork_start(void)
 {
+#ifndef QEMU_FIBERS
+    if (mmap_lock_count)
+        abort();
+#endif
     qemu_rec_mutex_lock(&mmap_mutex);
 }
 

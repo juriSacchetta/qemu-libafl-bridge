@@ -302,9 +302,6 @@ Int128 cpu_atomic_cmpxchgo_be_mmu(CPUArchState *env, abi_ptr addr,
 
 #if defined(CONFIG_USER_ONLY)
 
-#ifndef QEMU_FIBERS
-extern __thread uintptr_t helper_retaddr;
-#endif
 uintptr_t get_helper_retaddr_tls(void);
 void set_helper_retaddr_tls(uintptr_t helper);
 

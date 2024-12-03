@@ -236,8 +236,36 @@ bool tcg_use_softmmu;
 #endif
 
 TCGContext tcg_init_ctx;
-__thread TCGContext *tcg_ctx;
 
+
+static TCGContext** get_tcg_ctx_ptr(void);
+#ifndef QEMU_FIBERS
+static __thread TCGContext *tcg_ctx;
+TCGContext *get_tcg_ctx(void)
+{
+    return tcg_ctx;
+}
+void set_tcg_ctx(TCGContext *ctx)
+{
+    tcg_ctx = ctx;
+}
+static TCGContext** get_tcg_ctx_ptr(void)
+{
+    return &tcg_ctx;
+}
+#else
+TCGContext* get_tcg_ctx(void) {
+    void** tls = pth_get_tls();
+    return (TCGContext*)tls[TCG_CTX_TLS];
+}
+void set_tcg_ctx(TCGContext *ctx) {
+    void** tls = pth_get_tls();
+    tls[TCG_CTX_TLS] = ctx;
+}
+static TCGContext** get_tcg_ctx_ptr(void) {
+    return (TCGContext**)pth_get_tls() + TCG_CTX_TLS;
+}
+#endif
 TCGContext **tcg_ctxs;
 unsigned int tcg_cur_ctxs;
 unsigned int tcg_max_ctxs;
@@ -356,7 +384,7 @@ static void tcg_out_label(TCGContext *s, TCGLabel *l)
 
 TCGLabel *gen_new_label(void)
 {
-    TCGContext *s = tcg_ctx;
+    TCGContext *s = get_tcg_ctx();
     TCGLabel *l = tcg_malloc(sizeof(TCGLabel));
 
     memset(l, 0, sizeof(TCGLabel));
@@ -789,7 +817,7 @@ static void alloc_tcg_plugin_context(TCGContext *s)
 #ifdef CONFIG_USER_ONLY
 void tcg_register_thread(void)
 {
-    tcg_ctx = &tcg_init_ctx;
+    set_tcg_ctx(&tcg_init_ctx);
 }
 #else
 void tcg_register_thread(void)
@@ -818,7 +846,7 @@ void tcg_register_thread(void)
         tcg_region_initial_alloc(s);
     }
 
-    tcg_ctx = s;
+    set_tcg_ctx(s);
 }
 #endif /* !CONFIG_USER_ONLY */
 
@@ -1363,7 +1391,7 @@ static void tcg_context_init(unsigned max_cpus)
 
     alloc_tcg_plugin_context(s);
 
-    tcg_ctx = s;
+    set_tcg_ctx(s);
     /*
      * In user-mode we simply share the init context among threads, since we
      * use a single region. See the documentation tcg_region_init() for the
@@ -1371,7 +1399,7 @@ static void tcg_context_init(unsigned max_cpus)
      * In system-mode we will have at most max_cpus TCG threads.
      */
 #ifdef CONFIG_USER_ONLY
-    tcg_ctxs = &tcg_ctx;
+    tcg_ctxs = get_tcg_ctx_ptr();
     tcg_cur_ctxs = 1;
     tcg_max_ctxs = 1;
 #else
@@ -1417,7 +1445,7 @@ TranslationBlock *tcg_tb_alloc(TCGContext *s)
 
 void tcg_prologue_init(void)
 {
-    TCGContext *s = tcg_ctx;
+    TCGContext *s = get_tcg_ctx();
     size_t prologue_size;
 
     s->code_ptr = s->code_gen_ptr;
@@ -1582,7 +1610,7 @@ void tcg_set_frame(TCGContext *s, TCGReg reg, intptr_t start, intptr_t size)
 static TCGTemp *tcg_global_mem_new_internal(TCGv_ptr base, intptr_t offset,
                                             const char *name, TCGType type)
 {
-    TCGContext *s = tcg_ctx;
+    TCGContext *s = get_tcg_ctx();
     TCGTemp *base_ts = tcgv_ptr_temp(base);
     TCGTemp *ts = tcg_global_alloc(s);
     int indirect_reg = 0;
@@ -1659,7 +1687,7 @@ TCGv_ptr tcg_global_mem_new_ptr(TCGv_ptr reg, intptr_t off, const char *name)
 
 TCGTemp *tcg_temp_new_internal(TCGType type, TCGTempKind kind)
 {
-    TCGContext *s = tcg_ctx;
+    TCGContext *s = get_tcg_ctx();
     TCGTemp *ts;
     int n;
 
@@ -1798,7 +1826,7 @@ TCGv_vec tcg_temp_new_vec_matching(TCGv_vec match)
 
 void tcg_temp_free_internal(TCGTemp *ts)
 {
-    TCGContext *s = tcg_ctx;
+    TCGContext *s = get_tcg_ctx();
 
     switch (ts->kind) {
     case TEMP_CONST:
@@ -1843,7 +1871,7 @@ void tcg_temp_free_vec(TCGv_vec arg)
 
 TCGTemp *tcg_constant_internal(TCGType type, int64_t val)
 {
-    TCGContext *s = tcg_ctx;
+    TCGContext *s = get_tcg_ctx();
     GHashTable *h = s->const_table[type];
     TCGTemp *ts;
 
@@ -1928,8 +1956,8 @@ TCGv_vec tcg_constant_vec_matching(TCGv_vec match, unsigned vece, int64_t val)
 #ifdef CONFIG_DEBUG_TCG
 size_t temp_idx(TCGTemp *ts)
 {
-    ptrdiff_t n = ts - tcg_ctx->temps;
-    assert(n >= 0 && n < tcg_ctx->nb_temps);
+    ptrdiff_t n = ts - get_tcg_ctx()->temps;
+    assert(n >= 0 && n < get_tcg_ctx()->nb_temps);
     return n;
 }
 
@@ -1937,10 +1965,10 @@ TCGTemp *tcgv_i32_temp(TCGv_i32 v)
 {
     uintptr_t o = (uintptr_t)v - offsetof(TCGContext, temps);
 
-    assert(o < sizeof(TCGTemp) * tcg_ctx->nb_temps);
+    assert(o < sizeof(TCGTemp) * get_tcg_ctx()->nb_temps);
     assert(o % sizeof(TCGTemp) == 0);
 
-    return (void *)tcg_ctx + (uintptr_t)v;
+    return (void *)get_tcg_ctx() + (uintptr_t)v;
 }
 #endif /* CONFIG_DEBUG_TCG */
 
@@ -2274,10 +2302,10 @@ void tcg_gen_callN(TCGHelperInfo *info, TCGTemp *ret, TCGTemp **args);
 
 #ifdef CONFIG_PLUGIN
     /* Flag helpers that may affect guest state */
-    if (tcg_ctx->plugin_insn &&
+    if (get_tcg_ctx()->plugin_insn &&
         !(info->flags & TCG_CALL_PLUGIN) &&
         !(info->flags & TCG_CALL_NO_SIDE_EFFECTS)) {
-        tcg_ctx->plugin_insn->calls_helpers = true;
+        get_tcg_ctx()->plugin_insn->calls_helpers = true;
     }
 #endif
 
@@ -2339,10 +2367,10 @@ void tcg_gen_callN(TCGHelperInfo *info, TCGTemp *ret, TCGTemp **args);
     op->args[pi++] = (uintptr_t)info;
     tcg_debug_assert(pi == total_args);
 
-    if (tcg_ctx->emit_before_op) {
-        QTAILQ_INSERT_BEFORE(tcg_ctx->emit_before_op, op, link);
+    if (get_tcg_ctx()->emit_before_op) {
+        QTAILQ_INSERT_BEFORE(get_tcg_ctx()->emit_before_op, op, link);
     } else {
-        QTAILQ_INSERT_TAIL(&tcg_ctx->ops, op, link);
+        QTAILQ_INSERT_TAIL(&get_tcg_ctx()->ops, op, link);
     }
 
     tcg_debug_assert(n_extend < ARRAY_SIZE(extend_free));
@@ -3181,7 +3209,7 @@ void tcg_op_remove(TCGContext *s, TCGOp *op)
 
 void tcg_remove_ops_after(TCGOp *op)
 {
-    TCGContext *s = tcg_ctx;
+    TCGContext *s = get_tcg_ctx();
 
     while (true) {
         TCGOp *last = tcg_last_op();
@@ -3194,7 +3222,7 @@ void tcg_remove_ops_after(TCGOp *op)
 
 static TCGOp *tcg_op_alloc(TCGOpcode opc, unsigned nargs)
 {
-    TCGContext *s = tcg_ctx;
+    TCGContext *s = get_tcg_ctx();
     TCGOp *op = NULL;
 
     if (unlikely(!QTAILQ_EMPTY(&s->free_ops))) {
@@ -3227,10 +3255,10 @@ TCGOp *tcg_emit_op(TCGOpcode opc, unsigned nargs)
 {
     TCGOp *op = tcg_op_alloc(opc, nargs);
 
-    if (tcg_ctx->emit_before_op) {
-        QTAILQ_INSERT_BEFORE(tcg_ctx->emit_before_op, op, link);
+    if (get_tcg_ctx()->emit_before_op) {
+        QTAILQ_INSERT_BEFORE(get_tcg_ctx()->emit_before_op, op, link);
     } else {
-        QTAILQ_INSERT_TAIL(&tcg_ctx->ops, op, link);
+        QTAILQ_INSERT_TAIL(&get_tcg_ctx()->ops, op, link);
     }
     return op;
 }

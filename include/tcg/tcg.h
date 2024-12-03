@@ -580,8 +580,8 @@ extern bool tcg_use_softmmu;
 #else
 #define tcg_use_softmmu  true
 #endif
-
-extern __thread TCGContext *tcg_ctx;
+TCGContext * get_tcg_ctx(void);
+void set_tcg_ctx(TCGContext *ctx);
 extern const void *tcg_code_gen_epilogue;
 extern uintptr_t tcg_splitwx_diff;
 extern TCGv_env tcg_env;
@@ -619,7 +619,7 @@ TCGTemp *tcgv_i32_temp(TCGv_i32 v);
 #else
 static inline size_t temp_idx(TCGTemp *ts)
 {
-    return ts - tcg_ctx->temps;
+    return ts - get_tcg_ctx()->temps;
 }
 
 /*
@@ -629,7 +629,7 @@ static inline size_t temp_idx(TCGTemp *ts)
  */
 static inline TCGTemp *tcgv_i32_temp(TCGv_i32 v)
 {
-    return (void *)tcg_ctx + (uintptr_t)v;
+    return (void *)get_tcg_ctx() + (uintptr_t)v;
 }
 #endif
 
@@ -681,7 +681,7 @@ static inline TCGArg tcgv_vec_arg(TCGv_vec v)
 static inline TCGv_i32 temp_tcgv_i32(TCGTemp *t)
 {
     (void)temp_idx(t); /* trigger embedded assert */
-    return (TCGv_i32)((void *)t - (void *)tcg_ctx);
+    return (TCGv_i32)((void *)t - (void *)get_tcg_ctx());
 }
 
 static inline TCGv_i64 temp_tcgv_i64(TCGTemp *t)
@@ -737,7 +737,7 @@ static inline void tcg_set_insn_start_param(TCGOp *op, int arg, uint64_t v)
 /* The last op that was emitted.  */
 static inline TCGOp *tcg_last_op(void)
 {
-    return QTAILQ_LAST(&tcg_ctx->ops);
+    return QTAILQ_LAST(&get_tcg_ctx()->ops);
 }
 
 /* Test for whether to terminate the TB for using too many opcodes.  */
@@ -750,7 +750,7 @@ static inline bool tcg_op_buf_full(void)
      * 16-bit unsigned offsets, TranslationBlock.jmp_reset_offset[]
      * and TCGContext.gen_insn_end_off[].
      */
-    return tcg_ctx->nb_ops >= 4000;
+    return get_tcg_ctx()->nb_ops >= 4000;
 }
 
 /* pool based memory allocation */
@@ -774,7 +774,7 @@ size_t tcg_nb_tbs(void);
 /* user-mode: Called with mmap_lock held.  */
 static inline void *tcg_malloc(int size)
 {
-    TCGContext *s = tcg_ctx;
+    TCGContext *s = get_tcg_ctx();
     uint8_t *ptr, *ptr_end;
 
     /* ??? This is a weak placeholder for minimum malloc alignment.  */
@@ -783,7 +783,7 @@ static inline void *tcg_malloc(int size)
     ptr = s->pool_cur;
     ptr_end = ptr + size;
     if (unlikely(ptr_end > s->pool_end)) {
-        return tcg_malloc_internal(tcg_ctx, size);
+        return tcg_malloc_internal(get_tcg_ctx(), size);
     } else {
         s->pool_cur = ptr_end;
         return ptr;
@@ -1062,8 +1062,8 @@ uint64_t dup_const(unsigned vece, uint64_t c);
 static inline const TCGOpcode *tcg_swap_vecop_list(const TCGOpcode *n)
 {
 #ifdef CONFIG_DEBUG_TCG
-    const TCGOpcode *o = tcg_ctx->vecop_list;
-    tcg_ctx->vecop_list = n;
+    const TCGOpcode *o = get_tcg_ctx()->vecop_list;
+    get_tcg_ctx()->vecop_list = n;
     return o;
 #else
     return NULL;
