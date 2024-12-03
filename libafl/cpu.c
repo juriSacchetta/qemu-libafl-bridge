@@ -20,10 +20,10 @@ int gdb_write_register(CPUState* cpu, uint8_t* mem_buf, int reg);
 static __thread GByteArray* libafl_qemu_mem_buf = NULL;
 
 #ifdef CONFIG_USER_ONLY
-#ifndef QEMU_FIBERS  
-static
+#ifndef QEMU_FIBERS
+__thread
 #endif
-__thread CPUArchState* libafl_qemu_env;
+CPUArchState* libafl_qemu_env;
 #endif
 
 #ifndef CONFIG_USER_ONLY

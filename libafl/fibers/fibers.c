@@ -34,23 +34,23 @@ void fibers_fork_end(bool child)
 
 #ifdef AS_LIB
 qemu_fiber *fiber_stopped = NULL;
-extern __thread CPUArchState *libafl_qemu_env;
+extern CPUArchState *libafl_qemu_env;
 
 extern void cpu_loop(CPUArchState *env);
 
 void *fibers_cpu_loop(void *arg)
 {
-    CPUArchState *env = (CPUArchState *)arg;
+    CPUArchState *env = cpu_env(arg);
     cpu_loop(env);
     fibers_exit(false);
     return NULL;
 }
 
-void fibers_save_stopped_thread(CPUArchState *cpu)
+void fibers_save_stopped_thread(CPUState *cpu)
 {
     fiber_stopped = fibers_thread_by_pth(pth_self());
     fiber_stopped->stopped = true;
-    fiber_stopped->env = cpu;
+    fiber_stopped->cpu_state = cpu;
 }
 static int check_exit_condition(void *arg)
 {
@@ -63,33 +63,21 @@ int libafl_qemu_run(void)
     {
         pth_attr_t attr = pth_attr_new();
         pth_attr_set(attr, PTH_ATTR_JOINABLE, 0);
-        fiber_stopped->thread = pth_spawn(attr, fibers_cpu_loop, fiber_stopped->env);
+        fiber_stopped->thread = pth_spawn(attr, fibers_cpu_loop, fiber_stopped->cpu_state);
         pth_attr_destroy(attr);
         fiber_stopped->stopped = false;
         fiber_stopped = NULL;
     }
     else
     {
-        fibers_spawn_cpu_loop(libafl_qemu_env);
+        CPUState *cpu = env_cpu(libafl_qemu_env);
+        fibers_spawn_cpu_loop(cpu);
     }
-    pth_wait(pth_event(PTH_EVENT_FUNC, check_exit_condition, NULL, pth_time(0, 500000)));
+    pth_wait(pth_event(PTH_EVENT_FUNC, check_exit_condition, NULL, pth_time(0, 5000)));
     if(fiber_stopped != NULL)
     {
         pth_abort(fiber_stopped->thread);
     }
     return 0;
-}
-
-int fibers_get_tid_by_cpu(CPUArchState *cpu)
-{
-    qemu_fiber *current;
-    QLIST_FOREACH(current, &fiber_list_head, entry)
-    {
-        if (current->env == cpu)
-        {
-            return current->fibers_tid;
-        }
-    }
-    return -1;
 }
 #endif

@@ -22,3 +22,6 @@
 #endif
 
 #define BASE_FIBERS_TID 0x3ffffff
+
+#define FIBERS_FATAL_ERROR(cond, fmt, ...) \
+    do { if (cond) {  fprintf(stderr, "QEMU_FIBERS (FATAL): " fmt, ##__VA_ARGS__); exit(-1); } } while (0)

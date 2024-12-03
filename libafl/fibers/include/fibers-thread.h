@@ -33,7 +33,7 @@ inline qemu_fiber *fibers_thread_by_tid(int fibers_tid)
 
 #ifdef AS_LIB
 void *fibers_cpu_loop(void *arg);
-inline qemu_fiber *fibers_spawn_cpu_loop(CPUArchState *cpu)
+inline qemu_fiber *fibers_spawn_cpu_loop(CPUState *cpu)
 {
     return fibers_spawn(-1, cpu, fibers_cpu_loop, cpu);
 }

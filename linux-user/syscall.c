@@ -6695,6 +6695,8 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
          * If this is our first additional thread, we need to ensure we
          * generate code for parallel execution and flush old translations.
          * Do this now so that the copy gets CF_PARALLEL too.
+         * 
+         * FIXME: Do I should use the TTCG also with user-level threads??
          */
         if (!(cpu->tcg_cflags & CF_PARALLEL)) {
             cpu->tcg_cflags |= CF_PARALLEL;
@@ -6743,6 +6745,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
 #ifdef QEMU_FIBERS
         /* It is not safe to deliver signals until the child has finished
            initializing, so temporarily block all signals.  */
+        //FIXME: Which is the correct method to manage the signals in fibers?
         sigfillset(&sigmask);
         pth_sigmask(SIG_BLOCK, &sigmask, &info.sigmask);
 #else
@@ -6756,7 +6759,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
 #endif
         cpu->random_seed = qemu_guest_random_seed_thread_part1();
 #ifdef QEMU_FIBERS
-        ret = fibers_spawn(-1, info.env, clone_func, &info)->fibers_tid;
+        ret = fibers_spawn(-1, env_cpu(info.env), clone_func, &info)->fibers_tid;
         pth_sigmask(SIG_SETMASK, &info.sigmask, NULL);
         if (ret != -1) {
             /* Wait for the child to initialize.  */
@@ -6764,7 +6767,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         }
 
         pth_mutex_release(&info.mutex);
-        /*TODO
+        /*FIXME
         free(&info.cond);
         free(&info.mutex);
         */

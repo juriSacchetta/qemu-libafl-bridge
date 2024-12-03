@@ -14,16 +14,11 @@ void fibers_thread_init(void)
     memset(main, 0, sizeof(qemu_fiber));
     QLIST_INSERT_HEAD(&fiber_list_head, main, entry);
     main->fibers_tid = fibers_count;
-    if(!pth_init())
-    {
-        //FIXME: Pass to use qemu_log (log.h)
-        fprintf(stderr, "PTH init failed\n");
-        exit(1);
-    }
-    //FIXME: main->thread = pth_init();
+    FIBERS_FATAL_ERROR(!pth_init(), "PTH init failed\n");
+    main->thread = pth_self();
 }
 
-qemu_fiber *fibers_spawn(int tid, CPUArchState *cpu, void *(*func)(void *), void *arg)
+qemu_fiber *fibers_spawn(int tid, CPUState *cpu, void *(*func)(void *), void *arg)
 {
     qemu_fiber *new = malloc(sizeof(qemu_fiber));
     memset(new, 0, sizeof(qemu_fiber));
@@ -44,7 +39,7 @@ qemu_fiber *fibers_spawn(int tid, CPUArchState *cpu, void *(*func)(void *), void
         new->fibers_tid = tid;
     }
 
-    new->env = cpu;
+    new->cpu_state = cpu;
 
     QLIST_INSERT_HEAD(&fiber_list_head, new, entry);
     return new;
@@ -52,13 +47,21 @@ qemu_fiber *fibers_spawn(int tid, CPUArchState *cpu, void *(*func)(void *), void
 
 void fibers_exit(bool continue_execution)
 {
+    //TODO: Should we free the cpu here?
     qemu_fiber *fiber = fibers_thread_by_pth(pth_self());
     assert(fiber != NULL);
+
+#ifndef AS_LIB
+    QLIST_REMOVE(fiber, entry);
+    free(fiber);
+#else
     if (!fiber->stopped)
     {
         QLIST_REMOVE(fiber, entry);
         free(fiber);
     }
+#endif
+
     if (!continue_execution)
         pth_exit(NULL);
 }
@@ -68,25 +71,30 @@ void fibers_thread_clear_all(void)
     qemu_fiber *current;
     QLIST_FOREACH(current, &fiber_list_head, entry)
     {
-        if (current->thread == pth_self() || current->stopped == true)
+        if (current->thread == pth_self())
             continue;
+#ifdef AS_LIB
+        if (current->stopped == true)
+            continue;
+#endif
         QLIST_REMOVE(current, entry);
         pth_abort(current->thread);
         free(current);
     }
 }
 
-void fibers_restore_thread(int tid, CPUArchState *s)
+#ifdef AS_LIB
+void fibers_restore_thread(int tid, CPUState *cpu)
 {
     qemu_fiber *current = fibers_thread_by_tid(tid);
     if (current != NULL)
     {
-        current->env = s;
+        current->cpu_state = cpu;
         return;
     }
-    fibers_spawn(tid, s, fibers_cpu_loop, s);
+    fibers_spawn(tid, cpu, fibers_cpu_loop, cpu);
 }
-
+#endif
 // static void fibers_thread_print_all(void) __attribute__((used));
 // static void fibers_thread_print_all(void)
 // {

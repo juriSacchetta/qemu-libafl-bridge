@@ -10,13 +10,14 @@
 #include "include/fibers-thread.h"
 #include "include/fibers-utils.h"
 
+//TODO: remove this function declaration, import the correct header
 extern void force_sig_env(CPUArchState *env, int sig);
 //TODO: check parametes 
 int fibers_syscall_tkill(abi_long tid, abi_long sig) {
     assert(tid <= fibers_count);
     qemu_fiber *current = fibers_thread_by_tid(tid);
     if (current == NULL) return -ESRCH;
-    force_sig_env(current->env, sig);
+    force_sig_env(cpu_env(current->cpu_state), sig);
     return 0;
 }
 
@@ -24,7 +25,7 @@ int fibers_syscall_tgkill(abi_long arg1, abi_long arg2, abi_long arg3) {
     assert(arg2 > BASE_FIBERS_TID);
     qemu_fiber *current = fibers_thread_by_tid(arg2);
     if(current == NULL) return -ESRCH;
-    force_sig_env(current->env, arg3);
+    force_sig_env(cpu_env(current->cpu_state), arg3);
     return 0;
 }
 

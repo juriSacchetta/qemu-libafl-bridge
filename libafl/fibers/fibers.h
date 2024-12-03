@@ -21,18 +21,20 @@ typedef struct
 
 void fibers_init(void);
 void fibers_fork_end(bool child);
-qemu_fiber *fibers_spawn(int tid, CPUArchState *cpu, void *(*func)(void *), void *arg);
+qemu_fiber *fibers_spawn(int tid, CPUState *cpu, void *(*func)(void *), void *arg);
 void fibers_exit(bool continue_execution);
 
 #ifdef AS_LIB
 #include "libafl/cpu.h"
-void fibers_save_stopped_thread(CPUArchState *cpu);
-void fibers_restore_thread(int tid, CPUArchState *s);
-int fibers_get_tid_by_cpu(CPUArchState *cpu);
+void fibers_save_stopped_thread(CPUState *cpu);
+void fibers_restore_thread(int tid, CPUState *s);
 #endif
 
 void fibers_call_scheduler(void);
 
+/*******************
+ * Syscall wrappers
+ *******************/
 int fibers_syscall_futex(int *uaddr, int op, int val, const struct timespec *timeout_ev, uint32_t val2, int *uaddr2,
                          uint32_t val3);
 int fibers_syscall_tkill(abi_long tid, abi_long sig);

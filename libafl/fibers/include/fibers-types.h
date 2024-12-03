@@ -6,7 +6,7 @@
 
 typedef struct qemu_fiber
 {
-    CPUArchState *env;
+    CPUState *cpu_state;
     int fibers_tid;
     pth_t thread;
     QLIST_ENTRY(qemu_fiber) entry;

@@ -180,6 +180,7 @@ foreach target : target_dirs
   have_bsd_user = have_bsd_user or target.endswith('bsd-user')
   have_system = have_system or target.endswith('-softmmu')
 endforeach
+# FIXME: use a config parameter :)
 have_qemu_fibers = have_linux_user
 add_project_arguments('-DQEMU_FIBERS', language: 'c')
 have_user = have_linux_user or have_bsd_user
