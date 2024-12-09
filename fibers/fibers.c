@@ -72,7 +72,9 @@ int libafl_qemu_run(void)
     {
         fibers_spawn_cpu_loop(libafl_qemu_env);
     }
-    pth_wait(pth_event(PTH_EVENT_FUNC, check_exit_condition, NULL, pth_time(0, 500000)));
+    pth_event_t event = pth_event(PTH_EVENT_FUNC, check_exit_condition, NULL, pth_time(0, 500000));
+    pth_wait(event);
+    pth_event_free(event, PTH_FREE_ALL);
     if(fiber_stopped != NULL)
     {
         pth_abort(fiber_stopped->thread);
