@@ -522,7 +522,7 @@ struct pth_attr_st {
 #line 40 "pth_lib.c"
 #define pth_implicit_init() \
     if (!pth_initialized) \
-        pth_init(0);
+        pth_init();
 #line 1 "_ON_THE_FLY_"
 
 /* make sure the scpp source extensions are skipped */

@@ -13,7 +13,7 @@ void fibers_thread_init(void)
     memset(main, 0, sizeof(qemu_fiber));
     QLIST_INSERT_HEAD(&fiber_list_head, main, entry);
     main->fibers_tid = fibers_count;
-    main->thread = pth_init(NULL);
+    main->thread = pth_init();
 }
 
 qemu_fiber *fibers_spawn(int tid, CPUArchState *cpu, void *(*func)(void *), void *arg)

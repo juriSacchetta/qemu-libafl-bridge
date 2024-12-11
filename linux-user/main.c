@@ -741,10 +741,6 @@ int main(int argc, char **argv, char **envp)
     unsigned long max_reserved_va;
     bool preserve_argv0;
 
-#ifdef QEMU_FIBERS
-    fibers_init();
-#endif
-
     error_init(argv[0]);
     module_call_init(MODULE_INIT_TRACE);
     qemu_init_cpu_list();
@@ -857,6 +853,10 @@ int main(int argc, char **argv, char **envp)
     env = cpu_env(cpu);
     cpu_reset(cpu);
     thread_cpu = cpu;
+
+#ifdef QEMU_FIBERS
+    fibers_init();
+#endif
 
     /*
      * Reserving too much vm space via mmap can run into problems

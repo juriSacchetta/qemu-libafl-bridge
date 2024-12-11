@@ -56,7 +56,7 @@ static void pth_ex_terminate(ex_t *ex)
 #endif
 
 /* initialize the package */
-pth_t pth_init(CPUState *qemu_cpu_ptr)
+pth_t pth_init(void)
 {
     pth_attr_t t_attr;
 
@@ -109,7 +109,7 @@ pth_t pth_init(CPUState *qemu_cpu_ptr)
     pth_attr_set(t_attr, PTH_ATTR_CANCEL_STATE, PTH_CANCEL_ENABLE|PTH_CANCEL_DEFERRED);
     pth_attr_set(t_attr, PTH_ATTR_STACK_SIZE,   0 /* special */);
     pth_attr_set(t_attr, PTH_ATTR_STACK_ADDR,   NULL);
-    pth_main = pth_spawn(t_attr, qemu_cpu_ptr, (void *(*)(void *))(-1), NULL);
+    pth_main = pth_spawn(t_attr, thread_cpu, (void *(*)(void *))(-1), NULL);
     if (pth_main == NULL) {
         pth_shield {
             pth_attr_destroy(t_attr);

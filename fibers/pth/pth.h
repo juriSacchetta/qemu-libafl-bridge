@@ -424,7 +424,7 @@ typedef void *Sfdisc_t;
 
 extern void pth_save_thread_cpu_addr(uintptr_t *addr);
     /* global functions */
-extern pth_t          pth_init(CPUState*);
+extern pth_t          pth_init(void);
 extern int            pth_kill(void);
 extern long           pth_ctrl(unsigned long, ...);
 extern long           pth_version(void);
