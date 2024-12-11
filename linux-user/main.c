@@ -689,7 +689,7 @@ static int parse_args(int argc, char **argv)
 
 uint64_t libafl_load_addr(void);
 int libafl_qemu_main(void);
-#ifndef QEMU_FIBERS
+#if !defined(QEMU_FIBERS) || !defined(AS_LIB)
 int libafl_qemu_run(void);
 #endif
 __thread CPUArchState *libafl_qemu_env;
@@ -707,7 +707,7 @@ __attribute__((weak)) int libafl_qemu_main(void)
     return 0;
 }
 
-#if !defined(QEMU_FIBERS)
+#if !defined(QEMU_FIBERS) || !defined(AS_LIB)
 int libafl_qemu_run(void)
 {
     cpu_loop(libafl_qemu_env);
